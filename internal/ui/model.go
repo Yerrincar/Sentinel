@@ -30,11 +30,14 @@ const (
 )
 
 type MainModel struct {
+	items          []string
 	height         int
 	width          int
 	servicesPerRow int
 	serviceHeight  int
 	serviceWidth   int
+	innerWidth     int
+	innerHeight    int
 	cursor         int
 	activeArea     int
 	contentFocus   bool
@@ -42,7 +45,9 @@ type MainModel struct {
 }
 
 func InitialModel() *MainModel {
+
 	return &MainModel{
+		items:      make([]string, 0),
 		activeArea: int(workSpaceFocus),
 	}
 }
@@ -52,6 +57,7 @@ func (m MainModel) Init() tea.Cmd {
 }
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	leng := len(m.items)
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -68,25 +74,25 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.contentFocus = false
 		case "up", "k":
 			if m.contentFocus && m.activeArea == int(servicesFocus) {
-				m.moveServicesCursor("up", 6)
+				m.moveServicesCursor("up", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("up")
 			}
 		case "down", "j":
 			if m.contentFocus && m.activeArea == int(servicesFocus) {
-				m.moveServicesCursor("down", 6)
+				m.moveServicesCursor("down", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("down")
 			}
 		case "left", "h":
 			if m.contentFocus && m.activeArea == int(servicesFocus) {
-				m.moveServicesCursor("left", 6)
+				m.moveServicesCursor("left", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("left")
 			}
 		case "right", "l":
 			if m.contentFocus && m.activeArea == int(servicesFocus) {
-				m.moveServicesCursor("right", 6)
+				m.moveServicesCursor("right", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("right")
 			}
@@ -94,31 +100,50 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.items = append(m.items, strconv.Itoa(m.width), strconv.Itoa(int(float64(m.width)*0.63)), "Service3", "Service4",
+			"Service5", "Service6", "Service7")
 		m.width = msg.Width - 2
 		m.height = msg.Height - 2
-		m.servicesPerRow = ((int(float64(m.width) * 0.63)) / 35)
+		standarSideWidth := int(float64(m.width) * 0.63)
+
+		m.servicesPerRow = (standarSideWidth / 35)
 		if m.servicesPerRow < 1 {
 			m.servicesPerRow = 1
 		}
-		m.serviceWidth = ((int(float64(m.width) * 0.63)) / 3) - 5
+		m.serviceWidth = (standarSideWidth / 3) - 5
 		if m.serviceWidth < 12 {
 			m.serviceWidth = 12
 		}
-		m.serviceWidth = ((int(float64(m.width) * 0.63)) / 3) - 5
+		m.serviceWidth = (standarSideWidth / 3) - 5
 		m.serviceHeight = m.serviceWidth / 2
+
+		m.innerWidth = standarSideWidth
+		m.innerHeight = m.height - 3
+		if m.innerWidth < 1 {
+			m.innerWidth = 1
+		}
+		if m.innerHeight < 1 {
+			m.innerHeight = 1
+		}
+
+		if m.viewport.Width == 0 && m.viewport.Height == 0 {
+			m.viewport = viewport.New(m.innerWidth, m.innerHeight)
+		} else {
+			m.viewport.Width = m.innerWidth
+			m.viewport.Height = m.innerHeight
+		}
 	}
 	return m, nil
 }
 
 func (m *MainModel) View() string {
-	items := []string{strconv.Itoa(m.width), strconv.Itoa(int(float64(m.width) * 0.63)), "Service3", "Service4", "Service5", "Service6"}
 	cards := make([]string, 0)
-	if len(items) > 0 {
+	if len(m.items) > 0 {
 		if m.cursor < 0 {
 			m.cursor = 0
 		}
-		if m.cursor >= len(items) {
-			m.cursor = len(items) - 1
+		if m.cursor >= len(m.items) {
+			m.cursor = len(m.items) - 1
 		}
 	}
 
@@ -129,7 +154,7 @@ func (m *MainModel) View() string {
 	filtersSpaceStyle := filtersSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
 	servicesCardsStyle := cardStyles.Width(m.serviceWidth).Height(m.serviceHeight).MarginLeft(2).MarginTop(1)
 
-	for idx, i := range items {
+	for idx, i := range m.items {
 		card := servicesCardsStyle.Render(i)
 		if m.contentFocus && m.activeArea == int(servicesFocus) && idx == m.cursor {
 			card = helpers.ColorPanelBorder(card, focusColor)
@@ -149,8 +174,30 @@ func (m *MainModel) View() string {
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cards[i:endIdx]...))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Right, rows...)
-	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(content), "Services")
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	m.viewport.SetContent(content)
+	if m.contentFocus && m.activeArea == int(servicesFocus) && len(rows) > 0 {
+		rowHeight := lipgloss.Height(rows[0])
+		if rowHeight < 1 {
+			rowHeight = 1
+		}
+
+		selectedRow := m.cursor / cardsPerRow
+		top := selectedRow * rowHeight
+		bottom := top + rowHeight
+
+		if top < m.viewport.YOffset {
+			m.viewport.YOffset = top
+		}
+		if bottom > m.viewport.YOffset+m.viewport.Height {
+			m.viewport.YOffset = bottom - m.viewport.Height
+		}
+		if m.viewport.YOffset < 0 {
+			m.viewport.YOffset = 0
+		}
+	}
+
+	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(m.viewport.View()), "Services")
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.String(), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(typesSpaceStyle.String(), "Types")
 	filtersSpacePanel := helpers.BorderTitle(filtersSpaceStyle.String(), "Filters")
