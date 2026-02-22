@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sentinel/internal/config"
 	helpers "sentinel/internal/util"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -41,13 +42,15 @@ type MainModel struct {
 	activeArea     focusArea
 	contentFocus   bool
 	viewport       viewport.Model
+	configHandler  *config.YamlConfig
 }
 
-func InitialModel() *MainModel {
+func InitialModel(y *config.YamlConfig) *MainModel {
 
 	return &MainModel{
-		items:      make([]string, 0),
-		activeArea: workSpaceFocus,
+		items:         make([]string, 0),
+		activeArea:    workSpaceFocus,
+		configHandler: y,
 	}
 }
 
@@ -99,7 +102,12 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	//Total width is 167 and side width is 105 for my screen
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
-		m.items = []string{"Service1", "Service2", "Service3", "Service4",
+		yamlfile := m.configHandler.ReadFromConfigFile()
+		var service string
+		for _, y := range yamlfile {
+			service = y.Name
+		}
+		m.items = []string{service, "Service2", "Service3", "Service4",
 			"Service5", "Service6", "Service7"}
 		m.width = msg.Width - 2
 		m.height = msg.Height - 2
