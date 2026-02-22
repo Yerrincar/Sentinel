@@ -2,7 +2,6 @@ package tui
 
 import (
 	helpers "sentinel/internal/util"
-	"strconv"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,7 +38,7 @@ type MainModel struct {
 	innerWidth     int
 	innerHeight    int
 	cursor         int
-	activeArea     int
+	activeArea     focusArea
 	contentFocus   bool
 	viewport       viewport.Model
 }
@@ -48,7 +47,7 @@ func InitialModel() *MainModel {
 
 	return &MainModel{
 		items:      make([]string, 0),
-		activeArea: int(workSpaceFocus),
+		activeArea: workSpaceFocus,
 	}
 }
 
@@ -64,7 +63,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "enter":
-			if m.activeArea == int(servicesFocus) {
+			if m.activeArea == servicesFocus {
 				m.contentFocus = !m.contentFocus
 				if m.contentFocus && m.cursor < 0 {
 					m.cursor = 0
@@ -73,35 +72,35 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.contentFocus = false
 		case "up", "k":
-			if m.contentFocus && m.activeArea == int(servicesFocus) {
+			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("up", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("up")
 			}
 		case "down", "j":
-			if m.contentFocus && m.activeArea == int(servicesFocus) {
+			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("down", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("down")
 			}
 		case "left", "h":
-			if m.contentFocus && m.activeArea == int(servicesFocus) {
+			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("left", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("left")
 			}
 		case "right", "l":
-			if m.contentFocus && m.activeArea == int(servicesFocus) {
+			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("right", leng)
 			} else if !m.contentFocus {
 				m.moveFocus("right")
 			}
 		}
 	}
-
+	//Total width is 167 and side width is 105 for my screen
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
-		m.items = append(m.items, strconv.Itoa(m.width), strconv.Itoa(int(float64(m.width)*0.63)), "Service3", "Service4",
-			"Service5", "Service6", "Service7")
+		m.items = []string{"Service1", "Service2", "Service3", "Service4",
+			"Service5", "Service6", "Service7"}
 		m.width = msg.Width - 2
 		m.height = msg.Height - 2
 		standarSideWidth := int(float64(m.width) * 0.63)
@@ -114,11 +113,10 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.serviceWidth < 12 {
 			m.serviceWidth = 12
 		}
-		m.serviceWidth = (standarSideWidth / 3) - 5
 		m.serviceHeight = m.serviceWidth / 2
 
-		m.innerWidth = standarSideWidth
-		m.innerHeight = m.height - 3
+		m.innerWidth = standarSideWidth - 1
+		m.innerHeight = m.height - 4
 		if m.innerWidth < 1 {
 			m.innerWidth = 1
 		}
@@ -137,7 +135,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *MainModel) View() string {
-	cards := make([]string, 0)
+	cards := make([]string, 0, len(m.items))
 	if len(m.items) > 0 {
 		if m.cursor < 0 {
 			m.cursor = 0
@@ -156,7 +154,7 @@ func (m *MainModel) View() string {
 
 	for idx, i := range m.items {
 		card := servicesCardsStyle.Render(i)
-		if m.contentFocus && m.activeArea == int(servicesFocus) && idx == m.cursor {
+		if m.contentFocus && m.activeArea == servicesFocus && idx == m.cursor {
 			card = helpers.ColorPanelBorder(card, focusColor)
 		}
 		cards = append(cards, card)
@@ -165,7 +163,7 @@ func (m *MainModel) View() string {
 	if cardsPerRow < 1 {
 		cardsPerRow = 1
 	}
-	var rows []string
+	rows := make([]string, 0, (len(cards)+cardsPerRow-1)/cardsPerRow)
 	for i := 0; i < len(cards); i += cardsPerRow {
 		endIdx := i + cardsPerRow
 		if endIdx > len(cards) {
@@ -176,7 +174,7 @@ func (m *MainModel) View() string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	m.viewport.SetContent(content)
-	if m.contentFocus && m.activeArea == int(servicesFocus) && len(rows) > 0 {
+	if m.contentFocus && m.activeArea == servicesFocus && len(rows) > 0 {
 		rowHeight := lipgloss.Height(rows[0])
 		if rowHeight < 1 {
 			rowHeight = 1
@@ -202,16 +200,16 @@ func (m *MainModel) View() string {
 	typesSpacePanel := helpers.BorderTitle(typesSpaceStyle.String(), "Types")
 	filtersSpacePanel := helpers.BorderTitle(filtersSpaceStyle.String(), "Filters")
 
-	if m.activeArea == int(servicesFocus) {
+	if m.activeArea == servicesFocus {
 		servicesPanel = helpers.ColorOuterPanelBorder(servicesPanel, focusColor)
 	}
-	if m.activeArea == int(workSpaceFocus) {
+	if m.activeArea == workSpaceFocus {
 		workSpacePanel = helpers.ColorPanelBorder(workSpacePanel, focusColor)
 	}
-	if m.activeArea == int(typesFocus) {
+	if m.activeArea == typesFocus {
 		typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, focusColor)
 	}
-	if m.activeArea == int(filtersFocus) {
+	if m.activeArea == filtersFocus {
 		filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, focusColor)
 	}
 
@@ -227,30 +225,30 @@ func (m *MainModel) moveFocus(dir string) {
 	switch focusArea(m.activeArea) {
 	case servicesFocus:
 		if dir == "left" {
-			m.activeArea = int(workSpaceFocus)
+			m.activeArea = workSpaceFocus
 		}
 	case workSpaceFocus:
 		switch dir {
 		case "right":
-			m.activeArea = int(servicesFocus)
+			m.activeArea = servicesFocus
 		case "down":
-			m.activeArea = int(typesFocus)
+			m.activeArea = typesFocus
 		}
 	case typesFocus:
 		switch dir {
 		case "up":
-			m.activeArea = int(workSpaceFocus)
+			m.activeArea = workSpaceFocus
 		case "right":
-			m.activeArea = int(filtersFocus)
+			m.activeArea = filtersFocus
 		}
 	case filtersFocus:
 		switch dir {
 		case "up":
-			m.activeArea = int(workSpaceFocus)
+			m.activeArea = workSpaceFocus
 		case "left":
-			m.activeArea = int(typesFocus)
+			m.activeArea = typesFocus
 		case "right":
-			m.activeArea = int(servicesFocus)
+			m.activeArea = servicesFocus
 		}
 	}
 }

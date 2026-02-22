@@ -1,0 +1,11 @@
+version: 1
+settings:
+  theme: "default"
+  polling:
+    interval: 3s
+services:
+  - id: "sentinel-docker-demo"
+    name: "Demo"
+    type: "docker"
+    docker:
+      container: "sentinel-docker-demo"
