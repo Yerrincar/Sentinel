@@ -3,8 +3,23 @@ Settings:
   Polling:
     Interval: 3
 Services:
-  - Id: "sentinel-docker-demo"
+  - Id: "sentinel-docker-demo-id"
     Name: "Demo"
     Type: "docker"
     Docker:
       Container: "sentinel-docker-demo"
+  - Id: "sentinel-docker-demo2-id"
+    Name: "Demo2"
+    Type: "docker"
+    Docker:
+      Container: "sentinel-docker-demo2"
+  - Id: "sentinel-docker-demo3-id"
+    Name: "Demo3"
+    Type: "docker"
+    Docker:
+      Container: "sentinel-docker-demo3"
+  - Id: "sentinel-docker-demo4-id"
+    Name: "Demo4"
+    Type: "docker"
+    Docker:
+      Container: "sentinel-docker-demo4"

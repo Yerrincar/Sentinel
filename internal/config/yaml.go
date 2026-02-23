@@ -7,15 +7,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type state int
-
-const (
-	running state = iota
-	stopped
-	error
-	unknown
-)
-
 type Settings struct {
 	Polling struct {
 		Interval int `yaml:"Interval"`
@@ -27,7 +18,15 @@ type ServiceDef struct {
 	Name   string `yaml:"Name"`
 	Docker struct {
 		ContainerName string `yaml:"Container"`
-	}
+	} `yaml:"Docker"`
+	K8s struct {
+		Context   string `yaml:"Context"`
+		Namespace string `yaml:"Namespace"`
+		Pod       string `yaml:"Pod"`
+	} `yaml:"K8s"`
+	Systemd struct {
+		Unit string `yaml:"Unit"`
+	} `yaml:"Systemd"`
 	TypeOfService string `yaml:"Type"`
 	Url           string `yaml:"Url"`
 }
@@ -48,4 +47,16 @@ func (y *YamlConfig) ReadFromConfigFile() []ServiceDef {
 		log.Fatalf("Unmarshal failed: %v", err)
 	}
 	return y.Services
+}
+
+func (y *YamlConfig) ServicesInfo() []string {
+	info := y.ReadFromConfigFile()
+	services := make([]string, 0)
+	for _, i := range info {
+		switch i.TypeOfService {
+		case "docker":
+			services = append(services, i.Id+"\n"+i.Name+"\n"+i.Docker.ContainerName+"\n"+i.Url)
+		}
+	}
+	return services
 }
