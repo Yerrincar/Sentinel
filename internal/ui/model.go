@@ -4,6 +4,7 @@ import (
 	"sentinel/internal/backend/docker"
 	"sentinel/internal/config"
 	helpers "sentinel/internal/util"
+	"strconv"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,6 +33,8 @@ const (
 
 type MainModel struct {
 	items            []string
+	services         []config.ServiceDef
+	runtimeByID      map[string]docker.ServiceRuntime
 	height           int
 	width            int
 	servicesPerRow   int
@@ -48,23 +51,28 @@ type MainModel struct {
 	runtimeHandler   *docker.ServiceRuntime
 }
 
-func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.ServiceDef) *MainModel {
-
+func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.ServiceDef, services []config.ServiceDef) *MainModel {
 	return &MainModel{
 		items:            make([]string, 0),
 		activeArea:       workSpaceFocus,
 		configHandler:    y,
 		runtimeHandler:   r,
 		configServiceDef: s,
+		services:         services,
+		runtimeByID:      map[string]docker.ServiceRuntime{},
 	}
 }
 
 func (m *MainModel) Init() tea.Cmd {
-	services := m.configHandler.ReadFromConfigFile()
-	for _, s := range services {
+	for _, s := range m.services {
 		serviceInfo := make([]string, 0)
-		servicesStats := m.runtimeHandler.GetMetricsFromContainer(m.configHandler, s.Docker.ContainerName)
-		serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+servicesStats)
+		servicesStats := docker.GetMetricsFromContainer(s.Docker.ContainerName)
+		m.runtimeByID[s.Id] = servicesStats
+		dockerMetrics := m.runtimeByID[s.Id]
+		serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+
+			"\n"+
+			strconv.FormatFloat(dockerMetrics.Cpu, 'f', 1, 64)+" %"+"\n"+
+			dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+dockerMetrics.ErrorMsg)
 		m.items = append(m.items, serviceInfo...)
 	}
 	return nil
@@ -213,16 +221,14 @@ func (m *MainModel) View() string {
 	typesSpacePanel := helpers.BorderTitle(typesSpaceStyle.String(), "Types")
 	filtersSpacePanel := helpers.BorderTitle(filtersSpaceStyle.String(), "Filters")
 
-	if m.activeArea == servicesFocus {
+	switch m.activeArea {
+	case servicesFocus:
 		servicesPanel = helpers.ColorOuterPanelBorder(servicesPanel, focusColor)
-	}
-	if m.activeArea == workSpaceFocus {
+	case workSpaceFocus:
 		workSpacePanel = helpers.ColorPanelBorder(workSpacePanel, focusColor)
-	}
-	if m.activeArea == typesFocus {
+	case typesFocus:
 		typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, focusColor)
-	}
-	if m.activeArea == filtersFocus {
+	case filtersFocus:
 		filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, focusColor)
 	}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"sentinel/internal/config"
 	"strconv"
 
 	"github.com/moby/moby/api/types/container"
@@ -21,26 +20,30 @@ const (
 )
 
 type ServiceRuntime struct {
-	cpu      float64
-	mem      string
-	memLimit float64
-	status   state
-	uptime   int
-	errorMsg string
+	Cpu      float64
+	Mem      string
+	MemLimit string
+	Status   state
+	Uptime   int
+	ErrorMsg string
 }
 
-func (r *ServiceRuntime) GetMetricsFromContainer(y *config.YamlConfig, dockerContainer string) string {
+func GetMetricsFromContainer(dockerContainer string) ServiceRuntime {
+	var r ServiceRuntime
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		log.Fatal(err)
+		r.ErrorMsg = err.Error()
+		return r
 	}
 	resp, err := cli.ContainerStats(ctx, dockerContainer, client.ContainerStatsOptions{Stream: true})
 	if err != nil {
 		log.Printf("Error getting the container stats: %v", err.Error())
-		return ""
+		r.ErrorMsg = err.Error()
+		return r
 	}
 	defer resp.Body.Close()
 	var stats container.StatsResponse
@@ -52,14 +55,19 @@ func (r *ServiceRuntime) GetMetricsFromContainer(y *config.YamlConfig, dockerCon
 	prevSystemCPUTotal := stats.PreCPUStats.SystemUsage
 	cpuDelta := currentContainerCPU - prevContainerCPU
 	systemDelta := currentSystemCPUTotal - prevSystemCPUTotal
-	r.cpu = float64((cpuDelta / systemDelta) * uint64(stats.CPUStats.OnlineCPUs) * 100)
+	r.Cpu = float64((cpuDelta / systemDelta) * uint64(stats.CPUStats.OnlineCPUs) * 100)
 
+	r.Mem = "0.0"
 	if (stats.MemoryStats.Usage / (1024 * 1024)) < 1024 {
-		r.mem = strconv.FormatFloat(float64(stats.MemoryStats.Usage)/(1024.0*1024.0), 'f', 1, 64) + " MiB"
+		r.Mem = strconv.FormatFloat(float64(stats.MemoryStats.Usage)/(1024.0*1024.0), 'f', 1, 64) + " MiB"
 	} else {
-		r.mem = strconv.FormatFloat(float64(stats.MemoryStats.Usage)/(1024.0*1024.0*1024.0), 'f', 1, 64) + " GiB"
+		r.Mem = strconv.FormatFloat(float64(stats.MemoryStats.Usage)/(1024.0*1024.0*1024.0), 'f', 1, 64) + " GiB"
 	}
 
-	r.memLimit = float64(stats.MemoryStats.Limit) / (1024.0 * 1024.0 * 1024.0)
-	return strconv.FormatFloat(r.cpu, 'f', 1, 64) + "%" + "\n" + r.mem + " / " + strconv.FormatFloat(r.memLimit, 'f', 1, 64) + " GiB"
+	if (stats.MemoryStats.Limit / (1024 * 1024)) < 1024 {
+		r.MemLimit = strconv.FormatFloat(float64(stats.MemoryStats.Limit)/(1024.0*1024.0), 'f', 1, 64) + " MiB"
+	} else {
+		r.MemLimit = strconv.FormatFloat(float64(stats.MemoryStats.Limit)/(1024.0*1024.0*1024.0), 'f', 1, 64) + " GiB"
+	}
+	return r
 }

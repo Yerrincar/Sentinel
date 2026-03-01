@@ -10,11 +10,12 @@ import (
 )
 
 func main() {
-	s := &config.YamlConfig{}
+	y := &config.YamlConfig{}
 	r := &docker.ServiceRuntime{}
 	d := &config.ServiceDef{}
+	services := y.ReadFromConfigFile()
 
-	p := tea.NewProgram(tui.InitialModel(s, r, d), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(tui.InitialModel(y, r, d, services), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error starting Sentinel: %v", err)
 	}
