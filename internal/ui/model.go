@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sentinel/internal/backend/docker"
 	"sentinel/internal/config"
 	helpers "sentinel/internal/util"
 
@@ -30,39 +31,46 @@ const (
 )
 
 type MainModel struct {
-	items          []string
-	height         int
-	width          int
-	servicesPerRow int
-	serviceHeight  int
-	serviceWidth   int
-	innerWidth     int
-	innerHeight    int
-	cursor         int
-	activeArea     focusArea
-	contentFocus   bool
-	viewport       viewport.Model
-	configHandler  *config.YamlConfig
+	items            []string
+	height           int
+	width            int
+	servicesPerRow   int
+	serviceHeight    int
+	serviceWidth     int
+	innerWidth       int
+	innerHeight      int
+	cursor           int
+	activeArea       focusArea
+	contentFocus     bool
+	viewport         viewport.Model
+	configHandler    *config.YamlConfig
+	configServiceDef *config.ServiceDef
+	runtimeHandler   *docker.ServiceRuntime
 }
 
-func InitialModel(y *config.YamlConfig) *MainModel {
+func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.ServiceDef) *MainModel {
 
 	return &MainModel{
-		items:         make([]string, 0),
-		activeArea:    workSpaceFocus,
-		configHandler: y,
+		items:            make([]string, 0),
+		activeArea:       workSpaceFocus,
+		configHandler:    y,
+		runtimeHandler:   r,
+		configServiceDef: s,
 	}
 }
 
-func (m MainModel) Init() tea.Cmd {
+func (m *MainModel) Init() tea.Cmd {
+	services := m.configHandler.ReadFromConfigFile()
+	for _, s := range services {
+		serviceInfo := make([]string, 0)
+		servicesStats := m.runtimeHandler.GetMetricsFromContainer(m.configHandler, s.Docker.ContainerName)
+		serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+servicesStats)
+		m.items = append(m.items, serviceInfo...)
+	}
 	return nil
 }
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	services := m.configHandler.ServicesInfo()
-	for _, s := range services {
-		m.items = append(m.items, s)
-	}
 	leng := len(m.items)
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
