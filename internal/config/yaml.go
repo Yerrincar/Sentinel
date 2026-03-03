@@ -3,14 +3,15 @@ package config
 import (
 	"log"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Settings struct {
 	Polling struct {
-		Interval int64 `yaml:"Interval"`
-	}
+		Interval string `yaml:"Interval"`
+	} `yaml:"Polling"`
 }
 
 type ServiceDef struct {
@@ -49,16 +50,12 @@ func (y *YamlConfig) ReadFromConfigFile() []ServiceDef {
 	return y.Services
 }
 
-func (y *YamlConfig) Interval() int64 {
-	yamlFile, err := os.ReadFile("./internal/config/config.yaml")
-	if err != nil {
-		log.Printf("Error reading yaml config file: %v", err)
+func (y *YamlConfig) Interval() time.Duration {
+	interval, _ := time.ParseDuration(y.Settings.Polling.Interval)
+	if interval <= 0 {
+		return time.Second
 	}
-	err = yaml.Unmarshal(yamlFile, y)
-	if err != nil {
-		log.Fatalf("Unmarshal failed: %v", err)
-	}
-	return y.Settings.Polling.Interval
+	return interval
 }
 
 func (y *YamlConfig) ServicesInfo() []string {

@@ -37,7 +37,7 @@ func GetMetricsFromContainer(dockerContainer string) ServiceRuntime {
 		r.ErrorMsg = err.Error()
 		return r
 	}
-	resp, err := cli.ContainerStats(ctx, dockerContainer, client.ContainerStatsOptions{Stream: true})
+	resp, err := cli.ContainerStats(ctx, dockerContainer, client.ContainerStatsOptions{Stream: false})
 	if err != nil {
 		r.ErrorMsg = err.Error()
 		return r

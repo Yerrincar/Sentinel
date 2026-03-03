@@ -52,6 +52,7 @@ type MainModel struct {
 	configServiceDef *config.ServiceDef
 	runtimeHandler   *docker.ServiceRuntime
 	lastTick         time.Time
+	interval         time.Duration
 }
 
 func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.ServiceDef, services []config.ServiceDef) *MainModel {
@@ -63,6 +64,7 @@ func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.Serv
 		configServiceDef: s,
 		services:         services,
 		runtimeByID:      map[string]docker.ServiceRuntime{},
+		interval:         y.Interval(),
 	}
 }
 
@@ -85,9 +87,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	leng := len(m.items)
 	switch msg := msg.(type) {
 	case TickMsg:
-		m.lastTick = time.Time(msg)
-		m.refreshDockerCard()
-		return m, m.tickCmd()
+		if m.interval > 0 {
+			m.lastTick = time.Time(msg)
+			m.refreshDockerCard()
+			return m, m.tickCmd()
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -248,8 +252,7 @@ func (m *MainModel) View() string {
 }
 
 func (m *MainModel) tickCmd() tea.Cmd {
-	interval := time.Duration(m.configHandler.Interval()) * time.Second
-	return tea.Tick(interval, func(t time.Time) tea.Msg {
+	return tea.Tick(m.interval, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
 }
