@@ -3,7 +3,6 @@ package docker
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"strconv"
 
 	"github.com/moby/moby/api/types/container"
@@ -35,13 +34,11 @@ func GetMetricsFromContainer(dockerContainer string) ServiceRuntime {
 
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
-		log.Fatal(err)
 		r.ErrorMsg = err.Error()
 		return r
 	}
 	resp, err := cli.ContainerStats(ctx, dockerContainer, client.ContainerStatsOptions{Stream: true})
 	if err != nil {
-		log.Printf("Error getting the container stats: %v", err.Error())
 		r.ErrorMsg = err.Error()
 		return r
 	}

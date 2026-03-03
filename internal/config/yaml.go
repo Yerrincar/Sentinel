@@ -9,7 +9,7 @@ import (
 
 type Settings struct {
 	Polling struct {
-		Interval int `yaml:"Interval"`
+		Interval int64 `yaml:"Interval"`
 	}
 }
 
@@ -47,6 +47,18 @@ func (y *YamlConfig) ReadFromConfigFile() []ServiceDef {
 		log.Fatalf("Unmarshal failed: %v", err)
 	}
 	return y.Services
+}
+
+func (y *YamlConfig) Interval() int64 {
+	yamlFile, err := os.ReadFile("./internal/config/config.yaml")
+	if err != nil {
+		log.Printf("Error reading yaml config file: %v", err)
+	}
+	err = yaml.Unmarshal(yamlFile, y)
+	if err != nil {
+		log.Fatalf("Unmarshal failed: %v", err)
+	}
+	return y.Settings.Polling.Interval
 }
 
 func (y *YamlConfig) ServicesInfo() []string {

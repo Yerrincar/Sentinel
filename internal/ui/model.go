@@ -5,6 +5,7 @@ import (
 	"sentinel/internal/config"
 	helpers "sentinel/internal/util"
 	"strconv"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +24,7 @@ var (
 )
 
 type focusArea int
+type TickMsg time.Time
 
 const (
 	servicesFocus focusArea = iota
@@ -49,6 +51,7 @@ type MainModel struct {
 	configHandler    *config.YamlConfig
 	configServiceDef *config.ServiceDef
 	runtimeHandler   *docker.ServiceRuntime
+	lastTick         time.Time
 }
 
 func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.ServiceDef, services []config.ServiceDef) *MainModel {
@@ -75,12 +78,16 @@ func (m *MainModel) Init() tea.Cmd {
 			dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+dockerMetrics.ErrorMsg)
 		m.items = append(m.items, serviceInfo...)
 	}
-	return nil
+	return m.tickCmd()
 }
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	leng := len(m.items)
 	switch msg := msg.(type) {
+	case TickMsg:
+		m.lastTick = time.Time(msg)
+		m.refreshDockerCard()
+		return m, m.tickCmd()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -238,6 +245,30 @@ func (m *MainModel) View() string {
 
 	return standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
 		servicesPanel))
+}
+
+func (m *MainModel) tickCmd() tea.Cmd {
+	interval := time.Duration(m.configHandler.Interval()) * time.Second
+	return tea.Tick(interval, func(t time.Time) tea.Msg {
+		return TickMsg(t)
+	})
+}
+
+func (m *MainModel) refreshDockerCard() {
+	newItems := make([]string, 0, len(m.services))
+	for _, s := range m.services {
+		rt := docker.GetMetricsFromContainer(s.Docker.ContainerName)
+		m.runtimeByID[s.Id] = rt
+		newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+
+			strconv.FormatFloat(rt.Cpu, 'f', 1, 64)+" %\n"+rt.Mem+" / "+rt.MemLimit+"\n"+rt.ErrorMsg)
+	}
+	m.items = newItems
+	if m.cursor >= len(m.items) {
+		m.cursor = len(m.items) - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
 }
 
 func (m *MainModel) moveFocus(dir string) {

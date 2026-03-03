@@ -1,7 +1,7 @@
 Version: 1
 Settings:
   Polling:
-    Interval: 3
+    Interval: 1
 Services:
   - Id: "sentinel-docker-demo-id"
     Name: "Demo"
