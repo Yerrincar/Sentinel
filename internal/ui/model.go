@@ -15,12 +15,14 @@ import (
 var (
 	focusColor = lipgloss.Color("#3333FF")
 
-	standardStyle     = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
-	servicesSideStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
-	workSpaceStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
-	typesSpaceStyle   = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
-	filtersSpaceStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
-	cardStyles        = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	standardStyle        = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	servicesSideStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	workSpaceStyle       = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	typesSpaceStyle      = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	filtersSpaceStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	remoteConectionStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	addServiceStyle      = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	cardStyles           = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 )
 
 type focusArea int
@@ -31,6 +33,8 @@ const (
 	workSpaceFocus
 	typesFocus
 	filtersFocus
+	addServiceFocus
+	remoteConectionFocus
 )
 
 type MainModel struct {
@@ -182,6 +186,8 @@ func (m *MainModel) View() string {
 	workSpaceStyle := workSpaceStyle.Height(m.height / 12).Width(int(float64(m.width) * 0.33)).MarginLeft(1)
 	typesSpaceStyle := typesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
 	filtersSpaceStyle := filtersSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
+	remoteConectionStyle := remoteConectionStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
+	addServiceStyle := addServiceStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
 	servicesCardsStyle := cardStyles.Width(m.serviceWidth).Height(m.serviceHeight).MarginLeft(2).MarginTop(1)
 
 	for idx, i := range m.items {
@@ -231,6 +237,8 @@ func (m *MainModel) View() string {
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.String(), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(typesSpaceStyle.String(), "Types")
 	filtersSpacePanel := helpers.BorderTitle(filtersSpaceStyle.String(), "Filters")
+	addServicePanel := helpers.BorderTitle(addServiceStyle.String(), "Add Services")
+	remoteSpacePanel := helpers.BorderTitle(remoteConectionStyle.String(), "Remote Conection")
 
 	switch m.activeArea {
 	case servicesFocus:
@@ -241,11 +249,17 @@ func (m *MainModel) View() string {
 		typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, focusColor)
 	case filtersFocus:
 		filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, focusColor)
+	case remoteConectionFocus:
+		remoteSpacePanel = helpers.ColorPanelBorder(remoteSpacePanel, focusColor)
+	case addServiceFocus:
+		addServicePanel = helpers.ColorPanelBorder(addServicePanel, focusColor)
 	}
 
 	sidePanels := lipgloss.JoinVertical(lipgloss.Left, workSpacePanel, lipgloss.JoinHorizontal(lipgloss.Left,
 		typesSpacePanel,
-		filtersSpacePanel))
+		filtersSpacePanel),
+		addServicePanel,
+		remoteSpacePanel)
 
 	return standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
 		servicesPanel))
@@ -277,31 +291,51 @@ func (m *MainModel) refreshDockerCard() {
 func (m *MainModel) moveFocus(dir string) {
 	switch focusArea(m.activeArea) {
 	case servicesFocus:
-		if dir == "left" {
+		if dir == "left" || dir == "h" {
 			m.activeArea = workSpaceFocus
 		}
 	case workSpaceFocus:
 		switch dir {
-		case "right":
+		case "right", "l":
 			m.activeArea = servicesFocus
-		case "down":
+		case "down", "j":
 			m.activeArea = typesFocus
 		}
 	case typesFocus:
 		switch dir {
-		case "up":
+		case "up", "k":
 			m.activeArea = workSpaceFocus
-		case "right":
+		case "right", "l":
 			m.activeArea = filtersFocus
+		case "down", "j":
+			m.activeArea = addServiceFocus
 		}
 	case filtersFocus:
 		switch dir {
-		case "up":
+		case "up", "k":
 			m.activeArea = workSpaceFocus
-		case "left":
+		case "left", "h":
 			m.activeArea = typesFocus
-		case "right":
+		case "right", "l":
 			m.activeArea = servicesFocus
+		case "down", "j":
+			m.activeArea = addServiceFocus
+		}
+	case remoteConectionFocus:
+		switch dir {
+		case "up", "k":
+			m.activeArea = addServiceFocus
+		case "right", "l":
+			m.activeArea = servicesFocus
+		}
+	case addServiceFocus:
+		switch dir {
+		case "up", "k":
+			m.activeArea = typesFocus
+		case "right", "l":
+			m.activeArea = servicesFocus
+		case "down", "j":
+			m.activeArea = remoteConectionFocus
 		}
 	}
 }
@@ -324,19 +358,19 @@ func (m *MainModel) moveServicesCursor(dir string, total int) {
 	}
 
 	switch dir {
-	case "left":
+	case "left", "h":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "right":
+	case "right", "l":
 		if m.cursor < total-1 {
 			m.cursor++
 		}
-	case "up":
+	case "up", "k":
 		if m.cursor-cols >= 0 {
 			m.cursor -= cols
 		}
-	case "down":
+	case "down", "j":
 		if m.cursor+cols < total {
 			m.cursor += cols
 		}
