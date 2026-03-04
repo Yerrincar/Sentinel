@@ -81,7 +81,10 @@ func (m *MainModel) Init() tea.Cmd {
 		serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+
 			"\n"+
 			strconv.FormatFloat(dockerMetrics.Cpu, 'f', 1, 64)+" %"+"\n"+
-			dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+dockerMetrics.ErrorMsg)
+			dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+
+			dockerMetrics.Status+"\n"+
+			dockerMetrics.Uptime+"\n"+
+			"\n"+dockerMetrics.ErrorMsg)
 		m.items = append(m.items, serviceInfo...)
 	}
 	return m.tickCmd()
@@ -277,7 +280,12 @@ func (m *MainModel) refreshDockerCard() {
 		rt := docker.GetMetricsFromContainer(s.Docker.ContainerName)
 		m.runtimeByID[s.Id] = rt
 		newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+
-			strconv.FormatFloat(rt.Cpu, 'f', 1, 64)+" %\n"+rt.Mem+" / "+rt.MemLimit+"\n"+rt.ErrorMsg)
+			strconv.FormatFloat(rt.Cpu, 'f', 1, 64)+" %\n"+rt.Mem+" / "+
+			rt.MemLimit+"\n"+
+			rt.Status+"\n"+
+			rt.Uptime+"\n"+
+			rt.ErrorMsg)
+
 	}
 	m.items = newItems
 	if m.cursor >= len(m.items) {

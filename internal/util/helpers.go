@@ -1,7 +1,9 @@
 package helpers
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -129,4 +131,30 @@ func ColorOuterPanelBorder(panel string, color lipgloss.TerminalColor) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func FormatUptime(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+
+	totalSeconds := int64(d.Seconds())
+	days := totalSeconds / 86400
+	hours := (totalSeconds % 86400) / 3600
+	minutes := (totalSeconds % 3600) / 60
+	seconds := totalSeconds % 60
+
+	parts := make([]string, 0, 4)
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
+	if days > 0 || hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+	}
+	if days > 0 || hours > 0 || minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
+	}
+	parts = append(parts, fmt.Sprintf("%ds", seconds))
+
+	return strings.Join(parts, " ")
 }
