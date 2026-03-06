@@ -4,7 +4,7 @@ Settings:
     Interval: 1s
 Services:
   - Id: "sentinel-docker-demo-id"
-    Name: "Demo"
+    Name: "Docker-Demo"
     Type: "docker"
     Docker:
       Container: "sentinel-docker-demo"
@@ -13,13 +13,8 @@ Services:
     Type: "docker"
     Docker:
       Container: "sentinel-docker-demo2"
-  - Id: "sentinel-docker-demo3-id"
-    Name: "Demo3"
-    Type: "docker"
-    Docker:
-      Container: "sentinel-docker-demo3"
-  - Id: "sentinel-docker-demo4-id"
-    Name: "Demo4"
-    Type: "docker"
-    Docker:
-      Container: "sentinel-docker-demo4"
+  - Id: "sentinel-systemd-demo-id"
+    Name: "Systemd-Demo"
+    Type: "systemd"
+    Systemd:
+      Unit: "sentinel-systemd-demo"

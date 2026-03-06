@@ -2,6 +2,7 @@ package tui
 
 import (
 	"sentinel/internal/backend/docker"
+	"sentinel/internal/backend/systemd"
 	"sentinel/internal/config"
 	helpers "sentinel/internal/util"
 	"strconv"
@@ -75,17 +76,26 @@ func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.Serv
 func (m *MainModel) Init() tea.Cmd {
 	for _, s := range m.services {
 		serviceInfo := make([]string, 0)
-		servicesStats := docker.GetMetricsFromContainer(s.Docker.ContainerName)
-		m.runtimeByID[s.Id] = servicesStats
-		dockerMetrics := m.runtimeByID[s.Id]
-		serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+
-			"\n"+
-			strconv.FormatFloat(dockerMetrics.Cpu, 'f', 1, 64)+" %"+"\n"+
-			dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+
-			dockerMetrics.Status+"\n"+
-			dockerMetrics.Uptime+"\n"+
-			"\n"+dockerMetrics.ErrorMsg)
-		m.items = append(m.items, serviceInfo...)
+		switch s.TypeOfService {
+		case "docker":
+			dockerStats := docker.GetMetricsFromContainer(s.Docker.ContainerName)
+			m.runtimeByID[s.Id] = dockerStats
+			dockerMetrics := m.runtimeByID[s.Id]
+			serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+
+				"\n"+
+				strconv.FormatFloat(dockerMetrics.Cpu, 'f', 1, 64)+" %"+"\n"+
+				dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+
+				dockerMetrics.Status+"\n"+
+				dockerMetrics.Uptime+"\n"+
+				"\n"+dockerMetrics.ErrorMsg)
+			m.items = append(m.items, serviceInfo...)
+		case "systemd":
+			systemdStats := systemd.GetSystemdMetrics(s.Systemd.Unit)
+			m.runtimeByID[s.Id] = docker.ServiceRuntime(systemdStats)
+			serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+
+				systemdStats.Status)
+			m.items = append(m.items, serviceInfo...)
+		}
 	}
 	return m.tickCmd()
 }
@@ -277,14 +287,19 @@ func (m *MainModel) tickCmd() tea.Cmd {
 func (m *MainModel) refreshDockerCard() {
 	newItems := make([]string, 0, len(m.services))
 	for _, s := range m.services {
-		rt := docker.GetMetricsFromContainer(s.Docker.ContainerName)
-		m.runtimeByID[s.Id] = rt
-		newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+
-			strconv.FormatFloat(rt.Cpu, 'f', 1, 64)+" %\n"+rt.Mem+" / "+
-			rt.MemLimit+"\n"+
-			rt.Status+"\n"+
-			rt.Uptime+"\n"+
-			rt.ErrorMsg)
+		switch s.TypeOfService {
+		case "docker":
+			rt := docker.GetMetricsFromContainer(s.Docker.ContainerName)
+			m.runtimeByID[s.Id] = rt
+			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+
+				strconv.FormatFloat(rt.Cpu, 'f', 1, 64)+" %\n"+rt.Mem+" / "+
+				rt.MemLimit+"\n"+
+				rt.Status+"\n"+
+				rt.Uptime+"\n"+
+				rt.ErrorMsg)
+		case "systemd":
+			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit)
+		}
 
 	}
 	m.items = newItems

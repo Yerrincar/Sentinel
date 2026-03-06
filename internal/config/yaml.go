@@ -50,6 +50,34 @@ func (y *YamlConfig) ReadFromConfigFile() []ServiceDef {
 	return y.Services
 }
 
+func (y *YamlConfig) FilterByService(serviceType string) []ServiceDef {
+	filtered := make([]ServiceDef, 0)
+	for _, s := range y.Services {
+		if s.TypeOfService == serviceType {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
+func (y *YamlConfig) DockerServices() []ServiceDef {
+	services := y.FilterByService("docker")
+	dockerServices := make([]ServiceDef, 0)
+	for _, s := range services {
+		dockerServices = append(dockerServices, s)
+	}
+	return dockerServices
+}
+
+func (y *YamlConfig) SystemdServices() []ServiceDef {
+	services := y.FilterByService("systemd")
+	systemdServices := make([]ServiceDef, 0)
+	for _, s := range services {
+		systemdServices = append(systemdServices, s)
+	}
+	return systemdServices
+}
+
 func (y *YamlConfig) Interval() time.Duration {
 	interval, _ := time.ParseDuration(y.Settings.Polling.Interval)
 	if interval <= 0 {
@@ -59,9 +87,8 @@ func (y *YamlConfig) Interval() time.Duration {
 }
 
 func (y *YamlConfig) ServicesInfo() []string {
-	info := y.ReadFromConfigFile()
 	services := make([]string, 0)
-	for _, i := range info {
+	for _, i := range y.Services {
 		switch i.TypeOfService {
 		case "docker":
 			services = append(services, i.Id+"\n"+i.Name+"\n"+i.Docker.ContainerName+"\n"+i.Url)
