@@ -56,16 +56,18 @@ type MainModel struct {
 	viewport         viewport.Model
 	configHandler    *config.YamlConfig
 	configServiceDef *config.ServiceDef
+	samplerStruct    *systemd.Sampler
 	lastTick         time.Time
 	interval         time.Duration
 }
 
-func InitialModel(y *config.YamlConfig, s *config.ServiceDef, services []config.ServiceDef) *MainModel {
+func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler, services []config.ServiceDef) *MainModel {
 	return &MainModel{
 		items:            make([]string, 0),
 		activeArea:       workSpaceFocus,
 		configHandler:    y,
-		configServiceDef: s,
+		configServiceDef: d,
+		samplerStruct:    s,
 		services:         services,
 		runtimeByID:      map[string]model.ServiceRuntime{},
 		interval:         y.Interval(),
@@ -73,25 +75,26 @@ func InitialModel(y *config.YamlConfig, s *config.ServiceDef, services []config.
 }
 
 func (m *MainModel) Init() tea.Cmd {
-	for _, s := range m.services {
+	for _, t := range m.services {
 		serviceInfo := make([]string, 0)
-		switch s.TypeOfService {
+		switch t.TypeOfService {
 		case "docker":
-			dockerStats := docker.GetMetricsFromContainer(s.Docker.ContainerName)
-			m.runtimeByID[s.Id] = dockerStats
-			dockerMetrics := m.runtimeByID[s.Id]
-			serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+
+			dockerStats := docker.GetMetricsFromContainer(t.Docker.ContainerName)
+			m.runtimeByID[t.Id] = dockerStats
+			dockerMetrics := m.runtimeByID[t.Id]
+			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.Docker.ContainerName+"\n"+t.Url+
 				"\n"+
-				strconv.FormatFloat(dockerMetrics.Cpu, 'f', 1, 64)+" %"+"\n"+
+				strconv.FormatFloat(dockerMetrics.Cpu, 'f', 2, 64)+" %"+"\n"+
 				dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+
 				dockerMetrics.Status+"\n"+
 				dockerMetrics.Uptime+"\n"+
 				"\n"+dockerMetrics.ErrorMsg)
 			m.items = append(m.items, serviceInfo...)
 		case "systemd":
-			systemdStats := systemd.GetSystemdMetrics(s.Systemd.Unit)
-			m.runtimeByID[s.Id] = systemdStats
-			serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+
+			systemdStats := m.samplerStruct.GetSystemdMetrics(t.Id, t.Systemd.Unit)
+			m.runtimeByID[t.Id] = systemdStats
+			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.Systemd.Unit+"\n"+
+				strconv.FormatFloat(systemdStats.Cpu, 'f', 2, 64)+" %"+"\n"+
 				systemdStats.Status+"\n"+
 				systemdStats.Uptime+"\n"+
 				systemdStats.ErrorMsg)
@@ -293,15 +296,16 @@ func (m *MainModel) refreshCard() {
 			rt := docker.GetMetricsFromContainer(s.Docker.ContainerName)
 			m.runtimeByID[s.Id] = rt
 			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+
-				strconv.FormatFloat(rt.Cpu, 'f', 1, 64)+" %\n"+rt.Mem+" / "+
+				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+rt.Mem+" / "+
 				rt.MemLimit+"\n"+
 				rt.Status+"\n"+
 				rt.Uptime+"\n"+
 				rt.ErrorMsg)
 		case "systemd":
-			rt := systemd.GetSystemdMetrics(s.Systemd.Unit)
+			rt := m.samplerStruct.GetSystemdMetrics(s.Id, s.Systemd.Unit)
 			m.runtimeByID[s.Id] = rt
 			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+
+				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+
 				rt.Status+"\n"+
 				rt.Uptime+"\n"+
 				rt.ErrorMsg)
