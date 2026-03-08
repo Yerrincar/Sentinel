@@ -17,4 +17,4 @@ Services:
     Name: "Systemd-Demo"
     Type: "systemd"
     Systemd:
-      Unit: "sentinel-systemd-demo"
+      Unit: "sentinel-systemd-demo.service"

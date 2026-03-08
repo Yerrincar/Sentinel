@@ -4,6 +4,7 @@ import (
 	"sentinel/internal/backend/docker"
 	"sentinel/internal/backend/systemd"
 	"sentinel/internal/config"
+	"sentinel/internal/model"
 	helpers "sentinel/internal/util"
 	"strconv"
 	"time"
@@ -41,7 +42,7 @@ const (
 type MainModel struct {
 	items            []string
 	services         []config.ServiceDef
-	runtimeByID      map[string]docker.ServiceRuntime
+	runtimeByID      map[string]model.ServiceRuntime
 	height           int
 	width            int
 	servicesPerRow   int
@@ -55,20 +56,18 @@ type MainModel struct {
 	viewport         viewport.Model
 	configHandler    *config.YamlConfig
 	configServiceDef *config.ServiceDef
-	runtimeHandler   *docker.ServiceRuntime
 	lastTick         time.Time
 	interval         time.Duration
 }
 
-func InitialModel(y *config.YamlConfig, r *docker.ServiceRuntime, s *config.ServiceDef, services []config.ServiceDef) *MainModel {
+func InitialModel(y *config.YamlConfig, s *config.ServiceDef, services []config.ServiceDef) *MainModel {
 	return &MainModel{
 		items:            make([]string, 0),
 		activeArea:       workSpaceFocus,
 		configHandler:    y,
-		runtimeHandler:   r,
 		configServiceDef: s,
 		services:         services,
-		runtimeByID:      map[string]docker.ServiceRuntime{},
+		runtimeByID:      map[string]model.ServiceRuntime{},
 		interval:         y.Interval(),
 	}
 }
@@ -91,9 +90,11 @@ func (m *MainModel) Init() tea.Cmd {
 			m.items = append(m.items, serviceInfo...)
 		case "systemd":
 			systemdStats := systemd.GetSystemdMetrics(s.Systemd.Unit)
-			m.runtimeByID[s.Id] = docker.ServiceRuntime(systemdStats)
+			m.runtimeByID[s.Id] = systemdStats
 			serviceInfo = append(serviceInfo, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+
-				systemdStats.Status)
+				systemdStats.Status+"\n"+
+				systemdStats.Uptime+"\n"+
+				systemdStats.ErrorMsg)
 			m.items = append(m.items, serviceInfo...)
 		}
 	}
@@ -106,7 +107,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TickMsg:
 		if m.interval > 0 {
 			m.lastTick = time.Time(msg)
-			m.refreshDockerCard()
+			m.refreshCard()
 			return m, m.tickCmd()
 		}
 	case tea.KeyMsg:
@@ -284,7 +285,7 @@ func (m *MainModel) tickCmd() tea.Cmd {
 	})
 }
 
-func (m *MainModel) refreshDockerCard() {
+func (m *MainModel) refreshCard() {
 	newItems := make([]string, 0, len(m.services))
 	for _, s := range m.services {
 		switch s.TypeOfService {
@@ -298,7 +299,12 @@ func (m *MainModel) refreshDockerCard() {
 				rt.Uptime+"\n"+
 				rt.ErrorMsg)
 		case "systemd":
-			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit)
+			rt := systemd.GetSystemdMetrics(s.Systemd.Unit)
+			m.runtimeByID[s.Id] = rt
+			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+
+				rt.Status+"\n"+
+				rt.Uptime+"\n"+
+				rt.ErrorMsg)
 		}
 
 	}

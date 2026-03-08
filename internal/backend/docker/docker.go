@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"sentinel/internal/model"
 	helpers "sentinel/internal/util"
 	"strconv"
 	"strings"
@@ -14,17 +15,8 @@ import (
 
 type state int
 
-type ServiceRuntime struct {
-	Cpu      float64
-	Mem      string
-	MemLimit string
-	Status   string
-	Uptime   string
-	ErrorMsg string
-}
-
-func GetMetricsFromContainer(dockerContainer string) ServiceRuntime {
-	var r ServiceRuntime
+func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
+	var r model.ServiceRuntime
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
