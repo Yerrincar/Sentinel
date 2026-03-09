@@ -21,6 +21,15 @@ type Sampler struct {
 	prevByID map[string]cpuSample
 }
 
+type UnitSample struct {
+	Status          string
+	StartedAt       time.Time
+	CPUUsageUsec    uint64
+	MemCurrentBytes uint64
+	MemMaxBytes     uint64
+	MemUnlimited    bool
+}
+
 func (s *Sampler) GetSystemdMetrics(serviceId, unit string) model.ServiceRuntime {
 	var r model.ServiceRuntime
 	ctx := context.Background()
@@ -35,45 +44,23 @@ func (s *Sampler) GetSystemdMetrics(serviceId, unit string) model.ServiceRuntime
 		r.ErrorMsg = "Empty unit name"
 		return r
 	}
-	//status
-	statusInfo, err := conn.ListUnitsByNamesContext(ctx, []string{unit})
+	sample, err := readMetrics(ctx, conn, unit)
 	if err != nil {
 		r.ErrorMsg = err.Error()
 		return r
 	}
-	if len(statusInfo) <= 0 {
-		r.ErrorMsg = "Status len < 0"
-		return r
-	}
-	status := statusInfo[0].ActiveState
-	if status != "" {
-		status = strings.ToUpper(status[:1]) + status[1:]
-	}
-	r.Status = status
 
-	//uptime
-	uptimeInfo, err := conn.GetUnitPropertyContext(ctx, unit, "ActiveEnterTimestamp")
-	if err != nil {
-		r.ErrorMsg = err.Error()
-		return r
+	r.Status = sample.Status
+	r.Cpu = s.cpuMetrics(serviceId, sample.CPUUsageUsec, time.Now())
+	if !sample.StartedAt.IsZero() {
+		r.Uptime = helpers.FormatUptime(time.Since(sample.StartedAt))
 	}
-	uptime, ok := uptimeInfo.Value.Value().(uint64)
-	if ok == false {
-		r.ErrorMsg = "Error getting uptime"
+	r.Mem = formatBytes(sample.MemCurrentBytes)
+	if sample.MemUnlimited {
+		r.MemLimit = "No limit assigned"
+	} else {
+		r.MemLimit = formatBytes(sample.MemMaxBytes)
 	}
-	uptimeSec := uptime / 1_000_000
-	uptimeNsec := (uptime % 1_000_000) * 1_000
-	startedAt := time.Unix(int64(uptimeSec), int64(uptimeNsec))
-
-	r.Uptime = helpers.FormatUptime(time.Since(startedAt))
-
-	//cpustats
-	cpuPercentage, err := s.cpuMetrics(serviceId, unit, time.Now())
-	if err != nil {
-		r.ErrorMsg = "App error related to cpu calculation " + err.Error()
-		return r
-	}
-	r.Cpu = cpuPercentage
 
 	return r
 }
@@ -82,64 +69,97 @@ func NewSampler() *Sampler {
 	return &Sampler{prevByID: map[string]cpuSample{}}
 }
 
-func (s *Sampler) cpuMetrics(serviceID, unit string, now time.Time) (float64, error) {
+func (s *Sampler) cpuMetrics(serviceID string, currUsage uint64, now time.Time) float64 {
 	if s.prevByID == nil {
 		s.prevByID = make(map[string]cpuSample)
-	}
-	currUsage, err := readUsageUsec(unit)
-	if err != nil {
-		return 0.0, err
 	}
 	prev, ok := s.prevByID[serviceID]
 	s.prevByID[serviceID] = cpuSample{usageUsec: currUsage, at: now}
 
 	if !ok {
-		return 0.0, err
+		return 0.0
 	}
 	dt := now.Sub(prev.at).Microseconds()
 	du := int64(currUsage) - int64(prev.usageUsec)
 	if dt <= 0 || du < 0 {
-		return 0.0, err
+		return 0.0
 	}
 
 	cpuPct := (float64(du) / float64(dt)) * 100.0
-	return cpuPct, nil
+	return cpuPct
 }
 
-func readUsageUsec(unit string) (uint64, error) {
-	ctx := context.Background()
-	conn, err := dbus.NewSystemConnectionContext(ctx)
+func readMetrics(ctx context.Context, conn *dbus.Conn, unit string) (UnitSample, error) {
+	var u UnitSample
+
+	statusInfo, err := conn.ListUnitsByNamesContext(ctx, []string{unit})
 	if err != nil {
-		return 0, err
+		return u, err
 	}
-	defer conn.Close()
+	if len(statusInfo) == 0 {
+		return u, err
+	}
+	u.Status = statusInfo[0].ActiveState
+	if u.Status != "" {
+		u.Status = strings.ToUpper(u.Status[:1]) + u.Status[1:]
+	}
+
+	uptimeInfo, err := conn.GetUnitPropertyContext(ctx, unit, "ActiveEnterTimestamp")
+	if err != nil {
+		return u, err
+	}
+	if uptime, ok := uptimeInfo.Value.Value().(uint64); ok && uptime > 0 {
+		uptimeSec := uptime / 1_000_000
+		uptimeNsec := (uptime % 1_000_000) * 1_000
+		u.StartedAt = time.Unix(int64(uptimeSec), int64(uptimeNsec))
+	}
+
 	cgroupInfo, err := conn.GetUnitTypePropertyContext(ctx, unit, "Service", "ControlGroup")
 	if err != nil {
-		return 0, err
+		return u, err
 	}
 	cg, ok := cgroupInfo.Value.Value().(string)
 	if !ok {
-		return 0, err
+		return u, err
 	}
 	servicePath := "/sys/fs/cgroup" + cg
 
-	file, err := os.ReadDir(servicePath)
+	cpuStats, err := os.ReadFile(servicePath + "/cpu.stat")
 	if err != nil {
-		return 0, err
+		return u, err
 	}
-
-	cpuUsage := uint64(0)
-	for _, m := range file {
-		if m.Name() == "cpu.stat" {
-			cpuStats, _ := os.ReadFile(servicePath + "/cpu.stat")
-			cpuStatsString := string(cpuStats)
-			for _, c := range strings.Split(cpuStatsString, "\n") {
-				s := strings.Fields(c)
-				if len(s) > 1 && s[0] == "usage_usec" {
-					cpuUsage, _ = strconv.ParseUint(s[1], 10, 64)
-				}
+	for _, c := range strings.Split(string(cpuStats), "\n") {
+		fields := strings.Fields(c)
+		if len(fields) > 1 && fields[0] == "usage_usec" {
+			u.CPUUsageUsec, err = strconv.ParseUint(fields[1], 10, 64)
+			if err != nil {
+				return u, err
 			}
+			break
 		}
 	}
-	return cpuUsage, nil
+
+	memCurrentRaw, err := os.ReadFile(servicePath + "/memory.current")
+	if err == nil {
+		u.MemCurrentBytes, _ = strconv.ParseUint(strings.TrimSpace(string(memCurrentRaw)), 10, 64)
+	}
+
+	memMaxRaw, err := os.ReadFile(servicePath + "/memory.max")
+	if err == nil {
+		memMax := strings.TrimSpace(string(memMaxRaw))
+		if memMax == "max" {
+			u.MemUnlimited = true
+		} else {
+			u.MemMaxBytes, _ = strconv.ParseUint(memMax, 10, 64)
+		}
+	}
+
+	return u, nil
+}
+
+func formatBytes(bytes uint64) string {
+	if (bytes / (1024 * 1024)) < 1024 {
+		return strconv.FormatFloat(float64(bytes)/(1024.0*1024.0), 'f', 1, 64) + " MiB"
+	}
+	return strconv.FormatFloat(float64(bytes)/(1024.0*1024.0*1024.0), 'f', 1, 64) + " GiB"
 }

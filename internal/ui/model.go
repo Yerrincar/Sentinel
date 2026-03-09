@@ -93,8 +93,9 @@ func (m *MainModel) Init() tea.Cmd {
 		case "systemd":
 			systemdStats := m.samplerStruct.GetSystemdMetrics(t.Id, t.Systemd.Unit)
 			m.runtimeByID[t.Id] = systemdStats
-			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.Systemd.Unit+"\n"+
+			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.Systemd.Unit+"\n"+"\n"+
 				strconv.FormatFloat(systemdStats.Cpu, 'f', 2, 64)+" %"+"\n"+
+				systemdStats.Mem+" / "+systemdStats.MemLimit+"\n"+
 				systemdStats.Status+"\n"+
 				systemdStats.Uptime+"\n"+
 				systemdStats.ErrorMsg)
@@ -304,8 +305,9 @@ func (m *MainModel) refreshCard() {
 		case "systemd":
 			rt := m.samplerStruct.GetSystemdMetrics(s.Id, s.Systemd.Unit)
 			m.runtimeByID[s.Id] = rt
-			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+
+			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+"\n"+
 				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+
+				rt.Mem+" / "+rt.MemLimit+"\n"+
 				rt.Status+"\n"+
 				rt.Uptime+"\n"+
 				rt.ErrorMsg)
