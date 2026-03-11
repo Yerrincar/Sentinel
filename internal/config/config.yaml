@@ -18,3 +18,10 @@ Services:
     Type: "systemd"
     Systemd:
       Unit: "sentinel-systemd-demo.service"
+  - Id: "sentinel-k8s-demo-id"
+    Name: "K8s-Demo"
+    Type: "k8s"
+    K8s:
+      Context: "k3d-sentinel"
+      Namespace: "sentinel-demo"
+      Pod: "sentinel-k8s-demo"

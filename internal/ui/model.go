@@ -2,6 +2,7 @@ package tui
 
 import (
 	"sentinel/internal/backend/docker"
+	kubernetes "sentinel/internal/backend/k8s"
 	"sentinel/internal/backend/systemd"
 	"sentinel/internal/config"
 	"sentinel/internal/model"
@@ -99,6 +100,12 @@ func (m *MainModel) Init() tea.Cmd {
 				systemdStats.Status+"\n"+
 				systemdStats.Uptime+"\n"+
 				systemdStats.ErrorMsg)
+			m.items = append(m.items, serviceInfo...)
+		case "k8s":
+			k8sStats := kubernetes.GetMetricsFromPod(t.K8s.Pod, t.K8s.Namespace)
+			m.runtimeByID[t.Id] = k8sStats
+			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.K8s.Pod+"\n"+
+				k8sStats.Status)
 			m.items = append(m.items, serviceInfo...)
 		}
 	}
@@ -311,6 +318,11 @@ func (m *MainModel) refreshCard() {
 				rt.Status+"\n"+
 				rt.Uptime+"\n"+
 				rt.ErrorMsg)
+		case "k8s":
+			rt := kubernetes.GetMetricsFromPod(s.K8s.Pod, s.K8s.Namespace)
+			m.runtimeByID[s.Id] = rt
+			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.K8s.Pod+"\n"+
+				rt.Status)
 		}
 
 	}
