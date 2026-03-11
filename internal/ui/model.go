@@ -105,7 +105,11 @@ func (m *MainModel) Init() tea.Cmd {
 			k8sStats := kubernetes.GetMetricsFromPod(t.K8s.Pod, t.K8s.Namespace)
 			m.runtimeByID[t.Id] = k8sStats
 			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.K8s.Pod+"\n"+
-				k8sStats.Status)
+				strconv.FormatFloat(k8sStats.Cpu, 'f', 2, 64)+" %"+"\n"+
+				k8sStats.Mem+" / "+k8sStats.MemLimit+"\n"+
+				k8sStats.Status+"\n"+
+				k8sStats.Uptime+"\n"+
+				k8sStats.ErrorMsg)
 			m.items = append(m.items, serviceInfo...)
 		}
 	}
@@ -322,7 +326,11 @@ func (m *MainModel) refreshCard() {
 			rt := kubernetes.GetMetricsFromPod(s.K8s.Pod, s.K8s.Namespace)
 			m.runtimeByID[s.Id] = rt
 			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.K8s.Pod+"\n"+
-				rt.Status)
+				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+
+				rt.Mem+" / "+rt.MemLimit+"\n"+
+				rt.Status+"\n"+
+				rt.Uptime+"\n"+
+				rt.ErrorMsg)
 		}
 
 	}

@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -157,4 +158,20 @@ func FormatUptime(d time.Duration) string {
 	parts = append(parts, fmt.Sprintf("%ds", seconds))
 
 	return strings.Join(parts, " ")
+}
+
+func CPUPercent(prevUsageUsec, currUsageUsec uint64, prevAt, now time.Time) float64 {
+	dt := now.Sub(prevAt).Microseconds()
+	du := int64(currUsageUsec) - int64(prevUsageUsec)
+	if dt <= 0 || du < 0 {
+		return 0.0
+	}
+	return (float64(du) / float64(dt)) * 100.0
+}
+
+func FormatBytes(bytes uint64) string {
+	if (bytes / (1024 * 1024)) < 1024 {
+		return strconv.FormatFloat(float64(bytes)/(1024.0*1024.0), 'f', 1, 64) + " MiB"
+	}
+	return strconv.FormatFloat(float64(bytes)/(1024.0*1024.0*1024.0), 'f', 1, 64) + " GiB"
 }

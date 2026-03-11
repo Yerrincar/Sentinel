@@ -2,6 +2,7 @@ package systemd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sentinel/internal/model"
 	helpers "sentinel/internal/util"
@@ -55,11 +56,11 @@ func (s *Sampler) GetSystemdMetrics(serviceId, unit string) model.ServiceRuntime
 	if !sample.StartedAt.IsZero() {
 		r.Uptime = helpers.FormatUptime(time.Since(sample.StartedAt))
 	}
-	r.Mem = formatBytes(sample.MemCurrentBytes)
+	r.Mem = helpers.FormatBytes(sample.MemCurrentBytes)
 	if sample.MemUnlimited {
 		r.MemLimit = "No limit assigned"
 	} else {
-		r.MemLimit = formatBytes(sample.MemMaxBytes)
+		r.MemLimit = helpers.FormatBytes(sample.MemMaxBytes)
 	}
 
 	return r
@@ -79,14 +80,7 @@ func (s *Sampler) cpuMetrics(serviceID string, currUsage uint64, now time.Time) 
 	if !ok {
 		return 0.0
 	}
-	dt := now.Sub(prev.at).Microseconds()
-	du := int64(currUsage) - int64(prev.usageUsec)
-	if dt <= 0 || du < 0 {
-		return 0.0
-	}
-
-	cpuPct := (float64(du) / float64(dt)) * 100.0
-	return cpuPct
+	return helpers.CPUPercent(prev.usageUsec, currUsage, prev.at, now)
 }
 
 func readMetrics(ctx context.Context, conn *dbus.Conn, unit string) (UnitSample, error) {
@@ -97,7 +91,7 @@ func readMetrics(ctx context.Context, conn *dbus.Conn, unit string) (UnitSample,
 		return u, err
 	}
 	if len(statusInfo) == 0 {
-		return u, err
+		return u, fmt.Errorf("unit %s not found", unit)
 	}
 	u.Status = statusInfo[0].ActiveState
 	if u.Status != "" {
@@ -155,11 +149,4 @@ func readMetrics(ctx context.Context, conn *dbus.Conn, unit string) (UnitSample,
 	}
 
 	return u, nil
-}
-
-func formatBytes(bytes uint64) string {
-	if (bytes / (1024 * 1024)) < 1024 {
-		return strconv.FormatFloat(float64(bytes)/(1024.0*1024.0), 'f', 1, 64) + " MiB"
-	}
-	return strconv.FormatFloat(float64(bytes)/(1024.0*1024.0*1024.0), 'f', 1, 64) + " GiB"
 }
