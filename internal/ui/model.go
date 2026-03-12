@@ -45,6 +45,10 @@ const (
 type MainModel struct {
 	items              []string
 	services           []config.ServiceDef
+	typeOptions        []string
+	filterOptions      []string
+	typeCursor         int
+	filterCursor       int
 	runtimeByID        map[string]model.ServiceRuntime
 	height             int
 	width              int
@@ -75,6 +79,8 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 
 	return &MainModel{
 		items:              make([]string, 0),
+		typeOptions:        []string{"Docker", "Systemd", "K8s"},
+		filterOptions:      []string{"Running", "Degraded", "Stopped"},
 		activeArea:         workSpaceFocus,
 		configHandler:      y,
 		configServiceDef:   d,
@@ -170,10 +176,16 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "enter":
-			if m.activeArea == servicesFocus {
+			if m.activeArea == servicesFocus || m.activeArea == typesFocus || m.activeArea == filtersFocus {
 				m.contentFocus = !m.contentFocus
 				if m.contentFocus && m.cursor < 0 {
 					m.cursor = 0
+				}
+				if m.contentFocus && m.activeArea == typesFocus && m.typeCursor < 0 {
+					m.typeCursor = 0
+				}
+				if m.contentFocus && m.activeArea == filtersFocus && m.filterCursor < 0 {
+					m.filterCursor = 0
 				}
 			}
 			if m.activeArea == workSpaceFocus {
@@ -186,12 +198,20 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("up", leng)
+			} else if m.contentFocus && m.activeArea == typesFocus {
+				m.moveListCursor("up", &m.typeCursor, len(m.typeOptions))
+			} else if m.contentFocus && m.activeArea == filtersFocus {
+				m.moveListCursor("up", &m.filterCursor, len(m.filterOptions))
 			} else if !m.contentFocus {
 				m.moveFocus("up")
 			}
 		case "down", "j":
 			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("down", leng)
+			} else if m.contentFocus && m.activeArea == typesFocus {
+				m.moveListCursor("down", &m.typeCursor, len(m.typeOptions))
+			} else if m.contentFocus && m.activeArea == filtersFocus {
+				m.moveListCursor("down", &m.filterCursor, len(m.filterOptions))
 			} else if !m.contentFocus {
 				m.moveFocus("down")
 			}
@@ -317,8 +337,8 @@ func (m *MainModel) View() string {
 
 	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(m.viewport.View()), "Services")
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.Render(workspaceContent), "Workspace")
-	typesSpacePanel := helpers.BorderTitle(typesSpaceStyle.String(), "Types")
-	filtersSpacePanel := helpers.BorderTitle(filtersSpaceStyle.String(), "Filters")
+	typesSpacePanel := helpers.BorderTitle(m.renderListPanel(typesSpaceStyle, m.typeOptions, m.typeCursor, m.contentFocus && m.activeArea == typesFocus), "Types")
+	filtersSpacePanel := helpers.BorderTitle(m.renderListPanel(filtersSpaceStyle, m.filterOptions, m.filterCursor, m.contentFocus && m.activeArea == filtersFocus), "Filters")
 	addServicePanel := helpers.BorderTitle(addServiceStyle.String(), "Add Services")
 	remoteSpacePanel := helpers.BorderTitle(remoteConectionStyle.String(), "Remote Conection")
 
@@ -351,6 +371,56 @@ func (m *MainModel) tickCmd() tea.Cmd {
 	return tea.Tick(m.interval, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
+}
+
+func (m *MainModel) renderListPanel(panelStyle lipgloss.Style, options []string, cursor int, focused bool) string {
+	itemWidth := panelStyle.GetWidth() - 2
+	if itemWidth < 0 {
+		itemWidth = 0
+	}
+
+	inactiveStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("255")).
+		Bold(true).
+		Width(itemWidth)
+	activeStyle := inactiveStyle
+
+	rendered := make([]string, len(options))
+	for i, option := range options {
+		prefix := "- "
+		if focused && i == cursor {
+			prefix = "> "
+			rendered[i] = activeStyle.Render(prefix + option)
+			continue
+		}
+		rendered[i] = inactiveStyle.Render(prefix + option)
+	}
+
+	return panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rendered...))
+}
+
+func (m *MainModel) moveListCursor(dir string, cursor *int, total int) {
+	if total < 1 {
+		*cursor = 0
+		return
+	}
+	if *cursor < 0 {
+		*cursor = 0
+	}
+	if *cursor >= total {
+		*cursor = total - 1
+	}
+
+	switch dir {
+	case "up":
+		if *cursor > 0 {
+			*cursor--
+		}
+	case "down":
+		if *cursor < total-1 {
+			*cursor++
+		}
+	}
 }
 
 func (m *MainModel) refreshCard() {

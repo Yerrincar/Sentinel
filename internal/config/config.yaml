@@ -3,7 +3,7 @@ Settings:
     Polling:
         Interval: 1s
     Workspace:
-        Name: Workspace
+        Name: HomeLab Sentinel Demo
 Services:
     - Id: sentinel-docker-demo-id
       Name: Docker-Demo
