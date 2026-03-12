@@ -1,27 +1,55 @@
 Version: 1
 Settings:
-  Polling:
-    Interval: 1s
+    Polling:
+        Interval: 1s
+    Workspace:
+        Name: Workspace
 Services:
-  - Id: "sentinel-docker-demo-id"
-    Name: "Docker-Demo"
-    Type: "docker"
-    Docker:
-      Container: "sentinel-docker-demo"
-  - Id: "sentinel-docker-demo2-id"
-    Name: "Demo2"
-    Type: "docker"
-    Docker:
-      Container: "sentinel-docker-demo2"
-  - Id: "sentinel-systemd-demo-id"
-    Name: "Systemd-Demo"
-    Type: "systemd"
-    Systemd:
-      Unit: "sentinel-systemd-demo.service"
-  - Id: "sentinel-k8s-demo-id"
-    Name: "K8s-Demo"
-    Type: "k8s"
-    K8s:
-      Context: "k3d-sentinel"
-      Namespace: "sentinel-demo"
-      Pod: "sentinel-k8s-demo"
+    - Id: sentinel-docker-demo-id
+      Name: Docker-Demo
+      Docker:
+        Container: sentinel-docker-demo
+      K8s:
+        Context: ""
+        Namespace: ""
+        Pod: ""
+      Systemd:
+        Unit: ""
+      Type: docker
+      Url: ""
+    - Id: sentinel-docker-demo2-id
+      Name: Demo2
+      Docker:
+        Container: sentinel-docker-demo2
+      K8s:
+        Context: ""
+        Namespace: ""
+        Pod: ""
+      Systemd:
+        Unit: ""
+      Type: docker
+      Url: ""
+    - Id: sentinel-systemd-demo-id
+      Name: Systemd-Demo
+      Docker:
+        Container: ""
+      K8s:
+        Context: ""
+        Namespace: ""
+        Pod: ""
+      Systemd:
+        Unit: sentinel-systemd-demo.service
+      Type: systemd
+      Url: ""
+    - Id: sentinel-k8s-demo-id
+      Name: K8s-Demo
+      Docker:
+        Container: ""
+      K8s:
+        Context: k3d-sentinel
+        Namespace: sentinel-demo
+        Pod: sentinel-k8s-demo
+      Systemd:
+        Unit: ""
+      Type: k8s
+      Url: ""

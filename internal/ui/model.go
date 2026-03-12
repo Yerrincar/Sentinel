@@ -8,8 +8,10 @@ import (
 	"sentinel/internal/model"
 	helpers "sentinel/internal/util"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -41,37 +43,47 @@ const (
 )
 
 type MainModel struct {
-	items            []string
-	services         []config.ServiceDef
-	runtimeByID      map[string]model.ServiceRuntime
-	height           int
-	width            int
-	servicesPerRow   int
-	serviceHeight    int
-	serviceWidth     int
-	innerWidth       int
-	innerHeight      int
-	cursor           int
-	activeArea       focusArea
-	contentFocus     bool
-	viewport         viewport.Model
-	configHandler    *config.YamlConfig
-	configServiceDef *config.ServiceDef
-	samplerStruct    *systemd.Sampler
-	lastTick         time.Time
-	interval         time.Duration
+	items              []string
+	services           []config.ServiceDef
+	runtimeByID        map[string]model.ServiceRuntime
+	height             int
+	width              int
+	servicesPerRow     int
+	serviceHeight      int
+	serviceWidth       int
+	innerWidth         int
+	innerHeight        int
+	cursor             int
+	activeArea         focusArea
+	contentFocus       bool
+	viewport           viewport.Model
+	workspace          textinput.Model
+	workspaceActivated bool
+	configHandler      *config.YamlConfig
+	configServiceDef   *config.ServiceDef
+	samplerStruct      *systemd.Sampler
+	lastTick           time.Time
+	interval           time.Duration
 }
 
 func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler, services []config.ServiceDef) *MainModel {
+	t := textinput.New()
+	t.Placeholder = ""
+	t.SetValue(y.Settings.Workspace.Name)
+	t.Blur()
+	t.Width = 40
+
 	return &MainModel{
-		items:            make([]string, 0),
-		activeArea:       workSpaceFocus,
-		configHandler:    y,
-		configServiceDef: d,
-		samplerStruct:    s,
-		services:         services,
-		runtimeByID:      map[string]model.ServiceRuntime{},
-		interval:         y.Interval(),
+		items:              make([]string, 0),
+		activeArea:         workSpaceFocus,
+		configHandler:      y,
+		configServiceDef:   d,
+		samplerStruct:      s,
+		services:           services,
+		runtimeByID:        map[string]model.ServiceRuntime{},
+		interval:           y.Interval(),
+		workspace:          t,
+		workspaceActivated: false,
 	}
 }
 
@@ -118,6 +130,34 @@ func (m *MainModel) Init() tea.Cmd {
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	leng := len(m.items)
+
+	//workspace input text
+	if m.workspaceActivated == true {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc":
+				m.workspaceActivated = false
+				m.workspace.Blur()
+				return m, nil
+			case "enter":
+				workspaceText := strings.TrimSpace(m.workspace.Value())
+				if workspaceText != "" {
+					m.configHandler.WriteYamlConfigFile(workspaceText)
+				}
+				m.workspaceActivated = false
+				m.workspace.Blur()
+				return m, nil
+			}
+		}
+		var cmdWorkspace tea.Cmd
+		m.workspace, cmdWorkspace = m.workspace.Update(msg)
+		return m, cmdWorkspace
+	}
+
+	//normal Update func
 	switch msg := msg.(type) {
 	case TickMsg:
 		if m.interval > 0 {
@@ -135,6 +175,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.contentFocus && m.cursor < 0 {
 					m.cursor = 0
 				}
+			}
+			if m.activeArea == workSpaceFocus {
+				m.workspaceActivated = true
+				m.workspace.Focus()
+				return m, nil
 			}
 		case "esc":
 			m.contentFocus = false
@@ -212,12 +257,20 @@ func (m *MainModel) View() string {
 
 	standardStyle := standardStyle.Width(m.width).Height(m.height).MarginTop(1)
 	servicesSideStyle := servicesSideStyle.Height(m.height - 3).Width(int(float64(m.width) * 0.63)).MarginLeft(1)
-	workSpaceStyle := workSpaceStyle.Height(m.height / 12).Width(int(float64(m.width) * 0.33)).MarginLeft(1)
+	workSpaceStyle := workSpaceStyle.Height(m.height/12).Width(int(float64(m.width)*0.33)).MarginLeft(1).Align(lipgloss.Left, lipgloss.Center)
 	typesSpaceStyle := typesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
 	filtersSpaceStyle := filtersSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
 	remoteConectionStyle := remoteConectionStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
 	addServiceStyle := addServiceStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
 	servicesCardsStyle := cardStyles.Width(m.serviceWidth).Height(m.serviceHeight).MarginLeft(2).MarginTop(1)
+
+	workspaceContent := m.workspace.View()
+	if m.workspaceActivated == true {
+		workspaceContent = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Padding(0, 1).
+			Render(m.workspace.View())
+	}
 
 	for idx, i := range m.items {
 		card := servicesCardsStyle.Render(i)
@@ -263,7 +316,7 @@ func (m *MainModel) View() string {
 	}
 
 	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(m.viewport.View()), "Services")
-	workSpacePanel := helpers.BorderTitle(workSpaceStyle.String(), "Workspace")
+	workSpacePanel := helpers.BorderTitle(workSpaceStyle.Render(workspaceContent), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(typesSpaceStyle.String(), "Types")
 	filtersSpacePanel := helpers.BorderTitle(filtersSpaceStyle.String(), "Filters")
 	addServicePanel := helpers.BorderTitle(addServiceStyle.String(), "Add Services")

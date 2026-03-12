@@ -12,6 +12,9 @@ type Settings struct {
 	Polling struct {
 		Interval string `yaml:"Interval"`
 	} `yaml:"Polling"`
+	Workspace struct {
+		Name string `yaml:"Name"`
+	} `yaml:"Workspace"`
 }
 
 type ServiceDef struct {
@@ -48,6 +51,28 @@ func (y *YamlConfig) ReadFromConfigFile() []ServiceDef {
 		log.Fatalf("Unmarshal failed: %v", err)
 	}
 	return y.Services
+}
+
+func (y *YamlConfig) WriteYamlConfigFile(name string) {
+	filePath := "./internal/config/config.yaml"
+	yamlFile, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Error reading yaml config file: %v", err)
+	}
+	err = yaml.Unmarshal(yamlFile, y)
+	if err != nil {
+		log.Fatalf("Unmarshal failed: %v", err)
+	}
+	y.Settings.Workspace.Name = name
+	updatedData, err := yaml.Marshal(y)
+	if err != nil {
+		log.Fatalf("Error marshaling YAML: %v", err)
+	}
+
+	err = os.WriteFile(filePath, updatedData, 0644)
+	if err != nil {
+		log.Fatalf("Error writing to file: %v", err)
+	}
 }
 
 func (y *YamlConfig) FilterByService(serviceType string) []ServiceDef {

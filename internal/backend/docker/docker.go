@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"os/exec"
 	"sentinel/internal/model"
 	helpers "sentinel/internal/util"
 	"strconv"
@@ -17,6 +18,13 @@ type state int
 
 func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 	var r model.ServiceRuntime
+	statusOut, err := exec.Command("systemctl", "is-active", "docker.service").Output()
+	if err != nil || strings.TrimSpace(string(statusOut)) != "active" {
+		r.Status = "Inactive"
+		r.ErrorMsg = "docker daemon inactive"
+		return r
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -46,8 +54,9 @@ func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 	prevSystemCPUTotal := stats.PreCPUStats.SystemUsage
 	cpuDelta := currentContainerCPU - prevContainerCPU
 	systemDelta := currentSystemCPUTotal - prevSystemCPUTotal
-
-	r.Cpu = float64((cpuDelta / systemDelta) * uint64(stats.CPUStats.OnlineCPUs) * 100)
+	if cpuDelta != 0 && systemDelta != 0 {
+		r.Cpu = float64((cpuDelta / systemDelta) * uint64(stats.CPUStats.OnlineCPUs) * 100)
+	}
 
 	r.Mem = "0.0"
 	if (stats.MemoryStats.Usage / (1024 * 1024)) < 1024 {
@@ -71,6 +80,16 @@ func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 		r.ErrorMsg = err.Error()
 		return r
 	}
-	r.Uptime = helpers.FormatUptime(time.Since(uptime))
+	if inspection.Container.State.Running {
+		r.Uptime = helpers.FormatUptime(time.Since(uptime))
+		return r
+	}
+
+	finishedAt, err := time.Parse(time.RFC3339Nano, inspection.Container.State.FinishedAt)
+	if err != nil {
+		r.Uptime = helpers.FormatUptime(time.Since(uptime))
+		return r
+	}
+	r.Uptime = helpers.FormatUptime(finishedAt.Sub(uptime))
 	return r
 }
