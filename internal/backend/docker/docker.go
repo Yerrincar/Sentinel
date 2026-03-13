@@ -92,6 +92,51 @@ func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 	return r
 }
 
+func DockerStart(dockerContainerName string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		return err
+	}
+	_, err = cli.ContainerStart(ctx, dockerContainerName, client.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func DockerStop(dockerContainerName string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		return err
+	}
+	_, err = cli.ContainerStop(ctx, dockerContainerName, client.ContainerStopOptions{})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func DockerRestart(dockerContainerName string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		return err
+	}
+	_, err = cli.ContainerRestart(ctx, dockerContainerName, client.ContainerRestartOptions{})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func mapDockerStatus(raw string) (string, string) {
 	switch raw {
 	case "running":

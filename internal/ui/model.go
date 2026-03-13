@@ -220,6 +220,69 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedState = ""
 			m.typeCursor = 0
 			m.filterCursor = 0
+		case "s":
+			if m.activeArea == servicesFocus && m.contentFocus {
+				serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
+				if serviceIdx < 0 || serviceIdx >= len(m.services) {
+					break
+				}
+				service := m.services[serviceIdx]
+				switch service.TypeOfService {
+				case "docker":
+					dockerContainer := service.Docker.ContainerName
+					err := docker.DockerStart(dockerContainer)
+					if err != nil {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
+				}
+			}
+		case "t":
+			if m.activeArea == servicesFocus && m.contentFocus {
+				serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
+				if serviceIdx < 0 || serviceIdx >= len(m.services) {
+					break
+				}
+				service := m.services[serviceIdx]
+				switch service.TypeOfService {
+				case "docker":
+					dockerContainer := service.Docker.ContainerName
+					err := docker.DockerStop(dockerContainer)
+					if err != nil {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
+				}
+			}
+		case "r":
+			if m.activeArea == servicesFocus && m.contentFocus {
+				serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
+				if serviceIdx < 0 || serviceIdx >= len(m.services) {
+					break
+				}
+				service := m.services[serviceIdx]
+				switch service.TypeOfService {
+				case "docker":
+					dockerContainer := service.Docker.ContainerName
+					err := docker.DockerRestart(dockerContainer)
+					if err != nil {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
+				}
+			}
 		case "enter":
 			if m.activeArea == typesFocus && m.contentFocus {
 				m.selectedType = m.typeValueByOption()
@@ -389,8 +452,14 @@ func (m *MainModel) View() string {
 		remoteSpacePanel,
 		themesSpacePanel)
 
-	base := standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
-		servicesPanel))
+	footer := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(m.palette.Selected)).
+		PaddingLeft(1).
+		Render("Move: ↑↓→← / hjkl | Select: enter | Clear filters: c | Add service: a | Quit: ctrl+c/q")
+
+	base := standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Bottom,
+		lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
+			servicesPanel)), footer)
 	if m.addServiceMode {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderAddServiceModal())
 	}
@@ -923,6 +992,45 @@ func (m *MainModel) moveListCursor(dir string, cursor *int, total int) {
 		if *cursor < total-1 {
 			*cursor++
 		}
+	}
+}
+
+func (m *MainModel) syncServiceItem(serviceIdx int) {
+	if serviceIdx < 0 || serviceIdx >= len(m.services) {
+		return
+	}
+	s := m.services[serviceIdx]
+	rt := m.runtimeByID[s.Id]
+
+	var item string
+	switch s.TypeOfService {
+	case "docker":
+		item = s.Id + "\n" + s.Name + "\n" + s.Docker.ContainerName + "\n" + s.Url + "\n" +
+			strconv.FormatFloat(rt.Cpu, 'f', 2, 64) + " %\n" + rt.Mem + " / " +
+			rt.MemLimit + "\n" +
+			rt.Status + "\n" +
+			rt.Uptime + "\n" +
+			rt.ErrorMsg
+	case "systemd":
+		item = s.Id + "\n" + s.Name + "\n" + s.Systemd.Unit + "\n\n" +
+			strconv.FormatFloat(rt.Cpu, 'f', 2, 64) + " %\n" +
+			rt.Mem + " / " + rt.MemLimit + "\n" +
+			rt.Status + "\n" +
+			rt.Uptime + "\n" +
+			rt.ErrorMsg
+	case "k8s":
+		item = s.Id + "\n" + s.Name + "\n" + s.K8s.Pod + "\n" +
+			strconv.FormatFloat(rt.Cpu, 'f', 2, 64) + " %\n" +
+			rt.Mem + " / " + rt.MemLimit + "\n" +
+			rt.Status + "\n" +
+			rt.Uptime + "\n" +
+			rt.ErrorMsg
+	default:
+		return
+	}
+
+	if serviceIdx < len(m.items) {
+		m.items[serviceIdx] = item
 	}
 }
 
