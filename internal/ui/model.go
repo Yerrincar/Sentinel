@@ -49,6 +49,7 @@ type MainModel struct {
 	filterOptions      []string
 	typeCursor         int
 	filterCursor       int
+	selectedType       string
 	runtimeByID        map[string]model.ServiceRuntime
 	height             int
 	width              int
@@ -79,7 +80,7 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 
 	return &MainModel{
 		items:              make([]string, 0),
-		typeOptions:        []string{"Docker", "Systemd", "K8s"},
+		typeOptions:        []string{"All", "Docker", "Systemd", "K8s"},
 		filterOptions:      []string{"Running", "Degraded", "Stopped"},
 		activeArea:         workSpaceFocus,
 		configHandler:      y,
@@ -90,6 +91,7 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 		interval:           y.Interval(),
 		workspace:          t,
 		workspaceActivated: false,
+		selectedType:       "",
 	}
 }
 
@@ -136,6 +138,14 @@ func (m *MainModel) Init() tea.Cmd {
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	leng := len(m.items)
+	if m.selectedType != "" {
+		leng = 0
+		for _, s := range m.services {
+			if s.TypeOfService == m.selectedType {
+				leng++
+			}
+		}
+	}
 
 	//workspace input text
 	if m.workspaceActivated == true {
@@ -162,7 +172,6 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.workspace, cmdWorkspace = m.workspace.Update(msg)
 		return m, cmdWorkspace
 	}
-
 	//normal Update func
 	switch msg := msg.(type) {
 	case TickMsg:
@@ -175,14 +184,17 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "c":
+			m.selectedType = ""
+			m.typeCursor = 0
 		case "enter":
+			if m.activeArea == typesFocus && m.contentFocus {
+				m.selectedType = m.typeValueByOption()
+			}
 			if m.activeArea == servicesFocus || m.activeArea == typesFocus || m.activeArea == filtersFocus {
 				m.contentFocus = !m.contentFocus
 				if m.contentFocus && m.cursor < 0 {
 					m.cursor = 0
-				}
-				if m.contentFocus && m.activeArea == typesFocus && m.typeCursor < 0 {
-					m.typeCursor = 0
 				}
 				if m.contentFocus && m.activeArea == filtersFocus && m.filterCursor < 0 {
 					m.filterCursor = 0
@@ -265,16 +277,6 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *MainModel) View() string {
-	cards := make([]string, 0, len(m.items))
-	if len(m.items) > 0 {
-		if m.cursor < 0 {
-			m.cursor = 0
-		}
-		if m.cursor >= len(m.items) {
-			m.cursor = len(m.items) - 1
-		}
-	}
-
 	standardStyle := standardStyle.Width(m.width).Height(m.height).MarginTop(1)
 	servicesSideStyle := servicesSideStyle.Height(m.height - 3).Width(int(float64(m.width) * 0.63)).MarginLeft(1)
 	workSpaceStyle := workSpaceStyle.Height(m.height/12).Width(int(float64(m.width)*0.33)).MarginLeft(1).Align(lipgloss.Left, lipgloss.Center)
@@ -291,51 +293,8 @@ func (m *MainModel) View() string {
 			Padding(0, 1).
 			Render(m.workspace.View())
 	}
-
-	for idx, i := range m.items {
-		card := servicesCardsStyle.Render(i)
-		if m.contentFocus && m.activeArea == servicesFocus && idx == m.cursor {
-			card = helpers.ColorPanelBorder(card, focusColor)
-		}
-		cards = append(cards, card)
-	}
-	cardsPerRow := m.servicesPerRow
-	if cardsPerRow < 1 {
-		cardsPerRow = 1
-	}
-	rows := make([]string, 0, (len(cards)+cardsPerRow-1)/cardsPerRow)
-	for i := 0; i < len(cards); i += cardsPerRow {
-		endIdx := i + cardsPerRow
-		if endIdx > len(cards) {
-			endIdx = len(cards)
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cards[i:endIdx]...))
-	}
-
-	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	m.viewport.SetContent(content)
-	if m.contentFocus && m.activeArea == servicesFocus && len(rows) > 0 {
-		rowHeight := lipgloss.Height(rows[0])
-		if rowHeight < 1 {
-			rowHeight = 1
-		}
-
-		selectedRow := m.cursor / cardsPerRow
-		top := selectedRow * rowHeight
-		bottom := top + rowHeight
-
-		if top < m.viewport.YOffset {
-			m.viewport.YOffset = top
-		}
-		if bottom > m.viewport.YOffset+m.viewport.Height {
-			m.viewport.YOffset = bottom - m.viewport.Height
-		}
-		if m.viewport.YOffset < 0 {
-			m.viewport.YOffset = 0
-		}
-	}
-
-	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(m.viewport.View()), "Services")
+	servicesContent := m.renderServicesGrid(servicesCardsStyle, m.selectedType)
+	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(servicesContent), "Services")
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.Render(workspaceContent), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(m.renderListPanel(typesSpaceStyle, m.typeOptions, m.typeCursor, m.contentFocus && m.activeArea == typesFocus), "Types")
 	filtersSpacePanel := helpers.BorderTitle(m.renderListPanel(filtersSpaceStyle, m.filterOptions, m.filterCursor, m.contentFocus && m.activeArea == filtersFocus), "Filters")
@@ -371,6 +330,89 @@ func (m *MainModel) tickCmd() tea.Cmd {
 	return tea.Tick(m.interval, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
+}
+
+func (m *MainModel) typeValueByOption() string {
+	switch m.typeOptions[m.typeCursor] {
+	case "All":
+		return ""
+	case "Docker":
+		return "docker"
+	case "Systemd":
+		return "systemd"
+	case "K8s":
+		return "k8s"
+	default:
+		return ""
+	}
+}
+
+func (m *MainModel) renderServicesGrid(cardStyle lipgloss.Style, selectedType, selectedFilter string) string {
+	filtered := make([]string, 0, len(m.items))
+	for i, item := range m.items {
+		if selectedType == "" || (i < len(m.services) && m.services[i].TypeOfService == selectedType) {
+			filtered = append(filtered, item)
+		}
+	}
+
+	if len(filtered) > 0 {
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+		if m.cursor >= len(filtered) {
+			m.cursor = len(filtered) - 1
+		}
+	} else {
+		m.cursor = 0
+	}
+
+	cards := make([]string, 0, len(filtered))
+	for idx, item := range filtered {
+		card := cardStyle.Render(item)
+		if m.contentFocus && m.activeArea == servicesFocus && idx == m.cursor {
+			card = helpers.ColorPanelBorder(card, focusColor)
+		}
+		cards = append(cards, card)
+	}
+
+	cardsPerRow := m.servicesPerRow
+	if cardsPerRow < 1 {
+		cardsPerRow = 1
+	}
+
+	rows := make([]string, 0, (len(cards)+cardsPerRow-1)/cardsPerRow)
+	for i := 0; i < len(cards); i += cardsPerRow {
+		endIdx := i + cardsPerRow
+		if endIdx > len(cards) {
+			endIdx = len(cards)
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cards[i:endIdx]...))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	m.viewport.SetContent(content)
+	if m.contentFocus && m.activeArea == servicesFocus && len(rows) > 0 {
+		rowHeight := lipgloss.Height(rows[0])
+		if rowHeight < 1 {
+			rowHeight = 1
+		}
+
+		selectedRow := m.cursor / cardsPerRow
+		top := selectedRow * rowHeight
+		bottom := top + rowHeight
+
+		if top < m.viewport.YOffset {
+			m.viewport.YOffset = top
+		}
+		if bottom > m.viewport.YOffset+m.viewport.Height {
+			m.viewport.YOffset = bottom - m.viewport.Height
+		}
+		if m.viewport.YOffset < 0 {
+			m.viewport.YOffset = 0
+		}
+	}
+
+	return m.viewport.View()
 }
 
 func (m *MainModel) renderListPanel(panelStyle lipgloss.Style, options []string, cursor int, focused bool) string {
