@@ -58,13 +58,43 @@ func (y *YamlConfig) WriteYamlConfigFile(name string) {
 	yamlFile, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Printf("Error reading yaml config file: %v", err)
+		return
 	}
-	err = yaml.Unmarshal(yamlFile, y)
+
+	var root yaml.Node
+	err = yaml.Unmarshal(yamlFile, &root)
 	if err != nil {
 		log.Fatalf("Unmarshal failed: %v", err)
 	}
-	y.Settings.Workspace.Name = name
-	updatedData, err := yaml.Marshal(y)
+
+	if len(root.Content) == 0 {
+		log.Printf("Error updating yaml: empty document")
+		return
+	}
+	doc := root.Content[0]
+	settings := mapNodeValue(doc, "Settings")
+	if settings == nil {
+		log.Printf("Error updating yaml: missing Settings")
+		return
+	}
+
+	workspace := mapNodeValue(settings, "Workspace")
+	if workspace == nil {
+		workspace = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		settings.Content = append(settings.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "Workspace"},
+			workspace,
+		)
+	}
+
+	if !setMapScalar(workspace, "Name", name) {
+		workspace.Content = append(workspace.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "Name"},
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name},
+		)
+	}
+
+	updatedData, err := yaml.Marshal(&root)
 	if err != nil {
 		log.Fatalf("Error marshaling YAML: %v", err)
 	}
@@ -73,34 +103,39 @@ func (y *YamlConfig) WriteYamlConfigFile(name string) {
 	if err != nil {
 		log.Fatalf("Error writing to file: %v", err)
 	}
+
+	y.Settings.Workspace.Name = name
 }
 
-func (y *YamlConfig) FilterByService(serviceType string) []ServiceDef {
-	filtered := make([]ServiceDef, 0)
-	for _, s := range y.Services {
-		if s.TypeOfService == serviceType {
-			filtered = append(filtered, s)
+func mapNodeValue(m *yaml.Node, key string) *yaml.Node {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		k := m.Content[i]
+		v := m.Content[i+1]
+		if k.Value == key {
+			return v
 		}
 	}
-	return filtered
+	return nil
 }
 
-func (y *YamlConfig) DockerServices() []ServiceDef {
-	services := y.FilterByService("docker")
-	dockerServices := make([]ServiceDef, 0)
-	for _, s := range services {
-		dockerServices = append(dockerServices, s)
+func setMapScalar(m *yaml.Node, key, value string) bool {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return false
 	}
-	return dockerServices
-}
-
-func (y *YamlConfig) SystemdServices() []ServiceDef {
-	services := y.FilterByService("systemd")
-	systemdServices := make([]ServiceDef, 0)
-	for _, s := range services {
-		systemdServices = append(systemdServices, s)
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		k := m.Content[i]
+		v := m.Content[i+1]
+		if k.Value == key {
+			v.Kind = yaml.ScalarNode
+			v.Tag = "!!str"
+			v.Value = value
+			return true
+		}
 	}
-	return systemdServices
+	return false
 }
 
 func (y *YamlConfig) Interval() time.Duration {

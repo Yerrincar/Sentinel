@@ -561,17 +561,23 @@ func (m *MainModel) renderListPanel(panelStyle lipgloss.Style, options []string,
 		Bold(true).
 		Width(itemWidth)
 	activeStyle := inactiveStyle.Foreground(m.focusThemeColor())
-	selectedStyle := inactiveStyle.Foreground(lipgloss.Color(m.palette.Selected))
+	selectedStyle := inactiveStyle.
+		Foreground(lipgloss.Color(m.palette.Selected)).
+		Underline(true)
 
 	rendered := make([]string, len(options))
 	for i, option := range options {
+		isSelected := selectedValue != "" && mapValue(option) == selectedValue
 		prefix := "- "
+		if isSelected {
+			prefix = "* "
+		}
 		if focused && i == cursor {
 			prefix = "> "
 			rendered[i] = activeStyle.Render(prefix + option)
 			continue
 		}
-		if selectedValue != "" && mapValue(option) == selectedValue {
+		if isSelected {
 			rendered[i] = selectedStyle.Render(prefix + option)
 			continue
 		}
