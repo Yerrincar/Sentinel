@@ -50,6 +50,7 @@ type MainModel struct {
 	typeCursor         int
 	filterCursor       int
 	selectedType       string
+	selectedState      string
 	runtimeByID        map[string]model.ServiceRuntime
 	height             int
 	width              int
@@ -81,7 +82,7 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 	return &MainModel{
 		items:              make([]string, 0),
 		typeOptions:        []string{"All", "Docker", "Systemd", "K8s"},
-		filterOptions:      []string{"Running", "Degraded", "Stopped"},
+		filterOptions:      []string{"All", "Running", "Degraded", "Stopped", "Inactive"},
 		activeArea:         workSpaceFocus,
 		configHandler:      y,
 		configServiceDef:   d,
@@ -92,6 +93,7 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 		workspace:          t,
 		workspaceActivated: false,
 		selectedType:       "",
+		selectedState:      "",
 	}
 }
 
@@ -138,10 +140,10 @@ func (m *MainModel) Init() tea.Cmd {
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	leng := len(m.items)
-	if m.selectedType != "" {
+	if m.selectedType != "" || m.selectedState != "" {
 		leng = 0
-		for _, s := range m.services {
-			if s.TypeOfService == m.selectedType {
+		for i, s := range m.services {
+			if m.matchFilters(i, s) {
 				leng++
 			}
 		}
@@ -186,10 +188,15 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "c":
 			m.selectedType = ""
+			m.selectedState = ""
 			m.typeCursor = 0
+			m.filterCursor = 0
 		case "enter":
 			if m.activeArea == typesFocus && m.contentFocus {
 				m.selectedType = m.typeValueByOption()
+			}
+			if m.activeArea == filtersFocus && m.contentFocus {
+				m.selectedState = m.filterValueByOption()
 			}
 			if m.activeArea == servicesFocus || m.activeArea == typesFocus || m.activeArea == filtersFocus {
 				m.contentFocus = !m.contentFocus
@@ -293,7 +300,7 @@ func (m *MainModel) View() string {
 			Padding(0, 1).
 			Render(m.workspace.View())
 	}
-	servicesContent := m.renderServicesGrid(servicesCardsStyle, m.selectedType)
+	servicesContent := m.renderServicesGrid(servicesCardsStyle, m.selectedType, m.selectedState)
 	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(servicesContent), "Services")
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.Render(workspaceContent), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(m.renderListPanel(typesSpaceStyle, m.typeOptions, m.typeCursor, m.contentFocus && m.activeArea == typesFocus), "Types")
@@ -347,11 +354,46 @@ func (m *MainModel) typeValueByOption() string {
 	}
 }
 
-func (m *MainModel) renderServicesGrid(cardStyle lipgloss.Style, selectedType, selectedFilter string) string {
+func (m *MainModel) filterValueByOption() string {
+	switch m.filterOptions[m.filterCursor] {
+	case "All":
+		return ""
+	case "Running":
+		return "running"
+	case "Degraded":
+		return "degraded"
+	case "Stopped":
+		return "stopped"
+	case "Inactive":
+		return "inactive"
+	default:
+		return ""
+	}
+}
+
+func (m *MainModel) matchFilters(i int, s config.ServiceDef) bool {
+	if m.selectedType != "" && s.TypeOfService != m.selectedType {
+		return false
+	}
+	if m.selectedState == "" {
+		return true
+	}
+	if i >= len(m.services) {
+		return false
+	}
+	rt := m.runtimeByID[m.services[i].Id]
+	return rt.State == m.selectedState
+}
+
+func (m *MainModel) renderServicesGrid(cardStyle lipgloss.Style, selectedType, selectedState string) string {
 	filtered := make([]string, 0, len(m.items))
 	for i, item := range m.items {
-		if selectedType == "" || (i < len(m.services) && m.services[i].TypeOfService == selectedType) {
-			filtered = append(filtered, item)
+		if i < len(m.services) {
+			svc := m.services[i]
+			if (selectedType == "" || svc.TypeOfService == selectedType) &&
+				(selectedState == "" || m.runtimeByID[svc.Id].State == selectedState) {
+				filtered = append(filtered, item)
+			}
 		}
 	}
 

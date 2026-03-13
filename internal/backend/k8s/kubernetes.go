@@ -62,6 +62,7 @@ func GetMetricsFromPod(podName, namespace string) model.ServiceRuntime {
 	if s.Status != "" {
 		s.Status = strings.ToUpper(s.Status[:1]) + s.Status[1:]
 	}
+	s.State = mapPodStatus(pod)
 	if pod.Status.StartTime != nil {
 		s.Uptime = helpers.FormatUptime(time.Since(pod.Status.StartTime.Time))
 	}
@@ -168,4 +169,22 @@ func getExternalClusterConfig() (*rest.Config, error) {
 	}
 
 	return config, nil
+}
+
+func mapPodStatus(pod *corev1.Pod) string {
+	switch pod.Status.Phase {
+	case corev1.PodRunning:
+		for _, cs := range pod.Status.ContainerStatuses {
+			if !cs.Ready {
+				return "degraded"
+			}
+		}
+		return "running"
+	case corev1.PodPending, corev1.PodUnknown:
+		return "degraded"
+	case corev1.PodSucceeded, corev1.PodFailed:
+		return "stopped"
+	default:
+		return "degraded"
+	}
 }

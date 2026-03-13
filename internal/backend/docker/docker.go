@@ -21,6 +21,7 @@ func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 	statusOut, err := exec.Command("systemctl", "is-active", "docker.service").Output()
 	if err != nil || strings.TrimSpace(string(statusOut)) != "active" {
 		r.Status = "Inactive"
+		r.State = "inactive"
 		r.ErrorMsg = "docker daemon inactive"
 		return r
 	}
@@ -70,11 +71,8 @@ func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 	} else {
 		r.MemLimit = strconv.FormatFloat(float64(stats.MemoryStats.Limit)/(1024.0*1024.0*1024.0), 'f', 1, 64) + " GiB"
 	}
-	status := string(inspection.Container.State.Status)
-	if status != "" {
-		status = strings.ToUpper(status[:1]) + status[1:]
-	}
-	r.Status = status
+	rawStatus := strings.ToLower(string(inspection.Container.State.Status))
+	r.Status, r.State = mapDockerStatus(rawStatus)
 	uptime, err := time.Parse(time.RFC3339Nano, inspection.Container.State.StartedAt)
 	if err != nil {
 		r.ErrorMsg = err.Error()
@@ -92,4 +90,22 @@ func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 	}
 	r.Uptime = helpers.FormatUptime(finishedAt.Sub(uptime))
 	return r
+}
+
+func mapDockerStatus(raw string) (string, string) {
+	switch raw {
+	case "running":
+		return "Running", "running"
+	case "restarting", "paused":
+		return strings.ToUpper(raw[:1]) + raw[1:], "degraded"
+	case "created", "exited":
+		return "Inactive", "inactive"
+	case "dead", "removing":
+		return strings.ToUpper(raw[:1]) + raw[1:], "stopped"
+	default:
+		if raw == "" {
+			return "Unknown", "degraded"
+		}
+		return strings.ToUpper(raw[:1]) + raw[1:], "degraded"
+	}
 }

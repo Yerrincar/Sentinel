@@ -52,6 +52,7 @@ func (s *Sampler) GetSystemdMetrics(serviceId, unit string) model.ServiceRuntime
 	}
 
 	r.Status = sample.Status
+	r.State = mapSystemdStatus(sample.Status)
 	r.Cpu = s.cpuMetrics(serviceId, sample.CPUUsageUsec, time.Now())
 	if !sample.StartedAt.IsZero() {
 		r.Uptime = helpers.FormatUptime(time.Since(sample.StartedAt))
@@ -149,4 +150,17 @@ func readMetrics(ctx context.Context, conn *dbus.Conn, unit string) (UnitSample,
 	}
 
 	return u, nil
+}
+
+func mapSystemdStatus(status string) string {
+	switch strings.ToLower(status) {
+	case "active":
+		return "running"
+	case "inactive", "deactivating":
+		return "inactive"
+	case "failed":
+		return "stopped"
+	default:
+		return "degraded"
+	}
 }

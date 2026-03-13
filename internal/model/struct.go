@@ -5,6 +5,7 @@ type ServiceRuntime struct {
 	Mem      string
 	MemLimit string
 	Status   string
+	State    string
 	Uptime   string
 	ErrorMsg string
 }
