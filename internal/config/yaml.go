@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -105,6 +106,67 @@ func (y *YamlConfig) WriteYamlConfigFile(name string) {
 	}
 
 	y.Settings.Workspace.Name = name
+}
+
+func (y *YamlConfig) AddService(service ServiceDef) error {
+	filePath := "./internal/config/config.yaml"
+	yamlFile, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading yaml config file: %w", err)
+	}
+
+	var root yaml.Node
+	if err := yaml.Unmarshal(yamlFile, &root); err != nil {
+		return fmt.Errorf("unmarshal failed: %w", err)
+	}
+	if len(root.Content) == 0 {
+		return fmt.Errorf("empty yaml document")
+	}
+
+	doc := root.Content[0]
+	services := mapNodeValue(doc, "Services")
+	if services == nil {
+		services = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		doc.Content = append(doc.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "Services"},
+			services,
+		)
+	}
+	if services.Kind != yaml.SequenceNode {
+		return fmt.Errorf("Services is not a list")
+	}
+
+	for _, node := range services.Content {
+		idNode := mapNodeValue(node, "Id")
+		if idNode != nil && idNode.Value == service.Id {
+			return fmt.Errorf("service id already exists: %s", service.Id)
+		}
+	}
+
+	var serviceDoc yaml.Node
+	raw, err := yaml.Marshal(service)
+	if err != nil {
+		return fmt.Errorf("marshal service failed: %w", err)
+	}
+	if err := yaml.Unmarshal(raw, &serviceDoc); err != nil {
+		return fmt.Errorf("unmarshal service node failed: %w", err)
+	}
+	if len(serviceDoc.Content) == 0 {
+		return fmt.Errorf("empty service node")
+	}
+
+	services.Content = append(services.Content, serviceDoc.Content[0])
+
+	updatedData, err := yaml.Marshal(&root)
+	if err != nil {
+		return fmt.Errorf("error marshaling YAML: %w", err)
+	}
+	if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
+		return fmt.Errorf("error writing yaml: %w", err)
+	}
+
+	y.Services = append(y.Services, service)
+	return nil
 }
 
 func mapNodeValue(m *yaml.Node, key string) *yaml.Node {

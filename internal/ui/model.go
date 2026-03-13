@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"sentinel/internal/backend/docker"
 	kubernetes "sentinel/internal/backend/k8s"
 	"sentinel/internal/backend/systemd"
@@ -28,7 +29,6 @@ var (
 	filtersSpaceStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	themesSpaceStyle     = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	remoteConectionStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
-	addServiceStyle      = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	cardStyles           = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 )
 
@@ -41,7 +41,6 @@ const (
 	typesFocus
 	filtersFocus
 	themesFocus
-	addServiceFocus
 	remoteConectionFocus
 )
 
@@ -68,6 +67,12 @@ type MainModel struct {
 	viewport           viewport.Model
 	workspace          textinput.Model
 	workspaceActivated bool
+	addServiceMode     bool
+	addTypeOptions     []string
+	addTypeCursor      int
+	addFieldCursor     int
+	addInputs          []textinput.Model
+	addError           string
 	themesViewport     viewport.Model
 	themes             []theme.Palette
 	themeCursor        int
@@ -96,6 +101,7 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 		items:              make([]string, 0),
 		typeOptions:        []string{"All", "Docker", "Systemd", "K8s"},
 		filterOptions:      []string{"All", "Running", "Degraded", "Stopped", "Inactive"},
+		addTypeOptions:     []string{"Docker", "Systemd", "K8s"},
 		activeArea:         workSpaceFocus,
 		configHandler:      y,
 		configServiceDef:   d,
@@ -165,6 +171,10 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.addServiceMode {
+		return m.handleAddServiceUpdate(msg)
+	}
+
 	//workspace input text
 	if m.workspaceActivated == true {
 		switch msg := msg.(type) {
@@ -202,6 +212,9 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "a":
+			m.startAddService()
+			return m, nil
 		case "c":
 			m.selectedType = ""
 			m.selectedState = ""
@@ -323,7 +336,6 @@ func (m *MainModel) View() string {
 	typesSpaceStyle := typesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
 	filtersSpaceStyle := filtersSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
 	remoteConectionStyle := remoteConectionStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
-	addServiceStyle := addServiceStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
 	themesSpaceStyle := themesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
 	servicesCardsStyle := cardStyles.Width(m.serviceWidth).Height(m.serviceHeight).MarginLeft(2).MarginTop(1)
 
@@ -339,7 +351,6 @@ func (m *MainModel) View() string {
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.Render(workspaceContent), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(m.renderListPanel(typesSpaceStyle, m.typeOptions, m.typeCursor, m.contentFocus && m.activeArea == typesFocus, m.selectedType, m.typeValueByLabel), "Types")
 	filtersSpacePanel := helpers.BorderTitle(m.renderListPanel(filtersSpaceStyle, m.filterOptions, m.filterCursor, m.contentFocus && m.activeArea == filtersFocus, m.selectedState, m.filterValueByLabel), "Filters")
-	addServicePanel := helpers.BorderTitle(addServiceStyle.String(), "Add Services")
 	remoteSpacePanel := helpers.BorderTitle(remoteConectionStyle.String(), "Remote Conection")
 	themesSpacePanel := helpers.BorderTitle(m.renderThemesPanel(themesSpaceStyle), "Themes")
 
@@ -347,7 +358,6 @@ func (m *MainModel) View() string {
 	workSpacePanel = helpers.ColorPanelBorder(workSpacePanel, border)
 	typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, border)
 	filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, border)
-	addServicePanel = helpers.ColorPanelBorder(addServicePanel, border)
 	remoteSpacePanel = helpers.ColorPanelBorder(remoteSpacePanel, border)
 	themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, border)
 
@@ -355,7 +365,6 @@ func (m *MainModel) View() string {
 	workSpacePanel = m.colorPanelTitle(workSpacePanel, "Workspace", lipgloss.Color(m.palette.TitleWorkspace))
 	typesSpacePanel = m.colorPanelTitle(typesSpacePanel, "Types", lipgloss.Color(m.palette.TitleTypes))
 	filtersSpacePanel = m.colorPanelTitle(filtersSpacePanel, "Filters", lipgloss.Color(m.palette.TitleFilters))
-	addServicePanel = m.colorPanelTitle(addServicePanel, "Add Services", lipgloss.Color(m.palette.TitleAddService))
 	remoteSpacePanel = m.colorPanelTitle(remoteSpacePanel, "Remote Conection", lipgloss.Color(m.palette.TitleRemote))
 	themesSpacePanel = m.colorPanelTitle(themesSpacePanel, "Themes", lipgloss.Color(m.palette.TitleThemes))
 
@@ -372,25 +381,238 @@ func (m *MainModel) View() string {
 		themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, focus)
 	case remoteConectionFocus:
 		remoteSpacePanel = helpers.ColorPanelBorder(remoteSpacePanel, focus)
-	case addServiceFocus:
-		addServicePanel = helpers.ColorPanelBorder(addServicePanel, focus)
 	}
 
 	sidePanels := lipgloss.JoinVertical(lipgloss.Left, workSpacePanel, lipgloss.JoinHorizontal(lipgloss.Left,
 		typesSpacePanel,
 		filtersSpacePanel),
-		addServicePanel,
 		remoteSpacePanel,
 		themesSpacePanel)
 
-	return standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
+	base := standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
 		servicesPanel))
+	if m.addServiceMode {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderAddServiceModal())
+	}
+	return base
 }
 
 func (m *MainModel) tickCmd() tea.Cmd {
 	return tea.Tick(m.interval, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
+}
+
+func (m *MainModel) startAddService() {
+	m.addServiceMode = true
+	m.addError = ""
+	m.addTypeCursor = 0
+	m.addFieldCursor = 1
+	m.resetAddInputs()
+}
+
+func (m *MainModel) addFieldLabels() []string {
+	base := []string{"Id", "Name", "Url"}
+	switch strings.ToLower(m.addTypeOptions[m.addTypeCursor]) {
+	case "docker":
+		return append(base, "Container")
+	case "systemd":
+		return append(base, "Unit")
+	case "k8s":
+		return append(base, "Context", "Namespace", "Pod")
+	default:
+		return base
+	}
+}
+
+func (m *MainModel) resetAddInputs() {
+	labels := m.addFieldLabels()
+	m.addInputs = make([]textinput.Model, len(labels))
+	for i, label := range labels {
+		ti := textinput.New()
+		ti.Prompt = label + ": "
+		ti.Width = 36
+		ti.Blur()
+		m.addInputs[i] = ti
+	}
+	m.focusAddInput()
+}
+
+func (m *MainModel) focusAddInput() {
+	for i := range m.addInputs {
+		m.addInputs[i].Blur()
+	}
+	if m.addFieldCursor > 0 && m.addFieldCursor <= len(m.addInputs) {
+		m.addInputs[m.addFieldCursor-1].Focus()
+	}
+}
+
+func (m *MainModel) moveAddFieldCursor(dir string) {
+	max := len(m.addInputs)
+	switch dir {
+	case "up":
+		if m.addFieldCursor > 0 {
+			m.addFieldCursor--
+		}
+	case "down":
+		if m.addFieldCursor < max {
+			m.addFieldCursor++
+		}
+	}
+	m.focusAddInput()
+}
+
+func (m *MainModel) handleAddServiceUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width - 2
+		m.height = msg.Height - 2
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "esc":
+			m.addServiceMode = false
+			m.addError = ""
+			return m, nil
+		case "up":
+			m.moveAddFieldCursor("up")
+			return m, nil
+		case "down":
+			m.moveAddFieldCursor("down")
+			return m, nil
+		case "left", "shift+tab":
+			m.addTypeCursor = (m.addTypeCursor - 1 + len(m.addTypeOptions)) % len(m.addTypeOptions)
+			m.resetAddInputs()
+			m.addError = ""
+			return m, nil
+		case "right", "tab":
+			m.addTypeCursor = (m.addTypeCursor + 1) % len(m.addTypeOptions)
+			m.resetAddInputs()
+			m.addError = ""
+			return m, nil
+		case "enter":
+			if m.addFieldCursor == 0 {
+				m.moveAddFieldCursor("down")
+				return m, nil
+			}
+			if m.addFieldCursor < len(m.addInputs) {
+				m.moveAddFieldCursor("down")
+				return m, nil
+			}
+			if err := m.submitAddService(); err != nil {
+				m.addError = err.Error()
+				return m, nil
+			}
+			m.addServiceMode = false
+			m.addError = ""
+			m.refreshCard()
+			return m, nil
+		}
+	}
+
+	if m.addFieldCursor > 0 && m.addFieldCursor <= len(m.addInputs) {
+		idx := m.addFieldCursor - 1
+		var cmd tea.Cmd
+		m.addInputs[idx], cmd = m.addInputs[idx].Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m *MainModel) submitAddService() error {
+	labels := m.addFieldLabels()
+	values := make(map[string]string, len(labels))
+	for i, label := range labels {
+		values[label] = strings.TrimSpace(m.addInputs[i].Value())
+	}
+
+	if values["Id"] == "" || values["Name"] == "" {
+		return fmt.Errorf("id and name are required")
+	}
+	for _, existing := range m.services {
+		if existing.Id == values["Id"] {
+			return fmt.Errorf("service id already exists: %s", values["Id"])
+		}
+	}
+
+	svcType := strings.ToLower(m.addTypeOptions[m.addTypeCursor])
+	svc := config.ServiceDef{
+		Id:            values["Id"],
+		Name:          values["Name"],
+		TypeOfService: svcType,
+		Url:           values["Url"],
+	}
+	switch svcType {
+	case "docker":
+		if values["Container"] == "" {
+			return fmt.Errorf("container is required")
+		}
+		svc.Docker.ContainerName = values["Container"]
+	case "systemd":
+		if values["Unit"] == "" {
+			return fmt.Errorf("unit is required")
+		}
+		svc.Systemd.Unit = values["Unit"]
+	case "k8s":
+		if values["Namespace"] == "" || values["Pod"] == "" {
+			return fmt.Errorf("namespace and pod are required")
+		}
+		svc.K8s.Context = values["Context"]
+		svc.K8s.Namespace = values["Namespace"]
+		svc.K8s.Pod = values["Pod"]
+	default:
+		return fmt.Errorf("unsupported type: %s", svcType)
+	}
+
+	if err := m.configHandler.AddService(svc); err != nil {
+		return err
+	}
+	m.services = append(m.services, svc)
+	return nil
+}
+
+func (m *MainModel) renderAddServiceModal() string {
+	focus := m.focusThemeColor()
+	border := lipgloss.Color(m.palette.Border)
+	lines := []string{
+		lipgloss.NewStyle().Bold(true).Foreground(focus).Render("Add Service"),
+		"Use ←/→/tab/shift+tab to change type, ↑/↓ to move, Enter to continue, Esc to cancel",
+	}
+
+	typeLine := "  Type: " + m.addTypeOptions[m.addTypeCursor]
+	if m.addFieldCursor == 0 {
+		typeLine = lipgloss.NewStyle().Foreground(focus).Render("> Type: " + m.addTypeOptions[m.addTypeCursor])
+	}
+	lines = append(lines, typeLine)
+
+	for i := range m.addInputs {
+		line := "  " + m.addInputs[i].View()
+		if m.addFieldCursor == i+1 {
+			line = lipgloss.NewStyle().Foreground(focus).Render("> " + m.addInputs[i].View())
+		}
+		lines = append(lines, line)
+	}
+
+	if m.addError != "" {
+		lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(m.palette.StateError)).Render("Error: "+m.addError))
+	}
+
+	w := 64
+	if m.width > 0 && m.width-6 < w {
+		w = m.width - 6
+	}
+	if w < 40 {
+		w = 40
+	}
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Padding(1, 2).
+		Width(w).
+		Render(strings.Join(lines, "\n"))
 }
 
 func (m *MainModel) typeValueByOption() string {
@@ -767,7 +989,7 @@ func (m *MainModel) moveFocus(dir string) {
 		case "right", "l":
 			m.activeArea = filtersFocus
 		case "down", "j":
-			m.activeArea = addServiceFocus
+			m.activeArea = remoteConectionFocus
 		}
 	case filtersFocus:
 		switch dir {
@@ -778,25 +1000,16 @@ func (m *MainModel) moveFocus(dir string) {
 		case "right", "l":
 			m.activeArea = servicesFocus
 		case "down", "j":
-			m.activeArea = addServiceFocus
+			m.activeArea = remoteConectionFocus
 		}
 	case remoteConectionFocus:
-		switch dir {
-		case "up", "k":
-			m.activeArea = addServiceFocus
-		case "right", "l":
-			m.activeArea = servicesFocus
-		case "down", "j":
-			m.activeArea = themesFocus
-		}
-	case addServiceFocus:
 		switch dir {
 		case "up", "k":
 			m.activeArea = typesFocus
 		case "right", "l":
 			m.activeArea = servicesFocus
 		case "down", "j":
-			m.activeArea = remoteConectionFocus
+			m.activeArea = themesFocus
 		}
 	case themesFocus:
 		switch dir {
