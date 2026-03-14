@@ -161,9 +161,9 @@ func (m *MainModel) Init() tea.Cmd {
 				systemdStats.ErrorMsg)
 			m.items = append(m.items, serviceInfo...)
 		case "k8s":
-			k8sStats := kubernetes.GetMetricsFromPod(t.K8s.Pod, t.K8s.Namespace)
+			k8sStats := kubernetes.GetMetricsFromDeployment(t.K8s.Deployment, t.K8s.Namespace)
 			m.runtimeByID[t.Id] = k8sStats
-			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.K8s.Pod+"\n"+
+			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.K8s.Deployment+"\n"+
 				strconv.FormatFloat(k8sStats.Cpu, 'f', 2, 64)+" %"+"\n"+
 				k8sStats.Mem+" / "+k8sStats.MemLimit+"\n"+
 				k8sStats.Status+"\n"+
@@ -286,6 +286,16 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					m.refreshCard()
+				case "k8s":
+					err := kubernetes.K8sStart(service.K8s.Namespace, service.K8s.Deployment)
+					if err != nil {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
 				}
 			}
 		case "t":
@@ -318,6 +328,16 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					m.refreshCard()
+				case "k8s":
+					err := kubernetes.K8sStop(service.K8s.Namespace, service.K8s.Deployment)
+					if err != nil {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
 				}
 			}
 		case "r":
@@ -343,6 +363,16 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					systemdUnit := service.Systemd.Unit
 					result, err := systemd.SystemdRestart(systemdUnit)
 					if err != nil && result == 0 {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
+				case "k8s":
+					err := kubernetes.K8sRestart(service.K8s.Namespace, service.K8s.Deployment)
+					if err != nil {
 						rt := m.runtimeByID[service.Id]
 						rt.ErrorMsg = err.Error()
 						m.runtimeByID[service.Id] = rt
@@ -579,7 +609,7 @@ func (m *MainModel) addFieldLabels() []string {
 	case "systemd":
 		return append(base, "Unit")
 	case "k8s":
-		return append(base, "Context", "Namespace", "Pod")
+		return append(base, "Context", "Namespace", "Deployment")
 	default:
 		return base
 	}
@@ -716,12 +746,12 @@ func (m *MainModel) submitAddService() error {
 		}
 		svc.Systemd.Unit = values["Unit"]
 	case "k8s":
-		if values["Namespace"] == "" || values["Pod"] == "" {
-			return fmt.Errorf("namespace and pod are required")
+		if values["Namespace"] == "" || values["Deployment"] == "" {
+			return fmt.Errorf("namespace and deployment are required")
 		}
 		svc.K8s.Context = values["Context"]
 		svc.K8s.Namespace = values["Namespace"]
-		svc.K8s.Pod = values["Pod"]
+		svc.K8s.Deployment = values["Deployment"]
 	default:
 		return fmt.Errorf("unsupported type: %s", svcType)
 	}
@@ -1110,7 +1140,7 @@ func (m *MainModel) syncServiceItem(serviceIdx int) {
 			rt.Uptime + "\n" +
 			rt.ErrorMsg
 	case "k8s":
-		item = s.Id + "\n" + s.Name + "\n" + s.K8s.Pod + "\n" +
+		item = s.Id + "\n" + s.Name + "\n" + s.K8s.Deployment + "\n" +
 			strconv.FormatFloat(rt.Cpu, 'f', 2, 64) + " %\n" +
 			rt.Mem + " / " + rt.MemLimit + "\n" +
 			rt.Status + "\n" +
@@ -1148,9 +1178,9 @@ func (m *MainModel) refreshCard() {
 				rt.Uptime+"\n"+
 				rt.ErrorMsg)
 		case "k8s":
-			rt := kubernetes.GetMetricsFromPod(s.K8s.Pod, s.K8s.Namespace)
+			rt := kubernetes.GetMetricsFromDeployment(s.K8s.Deployment, s.K8s.Namespace)
 			m.runtimeByID[s.Id] = rt
-			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.K8s.Pod+"\n"+
+			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.K8s.Deployment+"\n"+
 				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+
 				rt.Mem+" / "+rt.MemLimit+"\n"+
 				rt.Status+"\n"+

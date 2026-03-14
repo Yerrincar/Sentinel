@@ -25,9 +25,10 @@ type ServiceDef struct {
 		ContainerName string `yaml:"Container"`
 	} `yaml:"Docker"`
 	K8s struct {
-		Context   string `yaml:"Context"`
-		Namespace string `yaml:"Namespace"`
-		Pod       string `yaml:"Pod"`
+		Context    string `yaml:"Context"`
+		Namespace  string `yaml:"Namespace"`
+		Deployment string `yaml:"Deployment"`
+		Pod        string `yaml:"Pod,omitempty"` // legacy key; migrated into Deployment on read
 	} `yaml:"K8s"`
 	Systemd struct {
 		Unit string `yaml:"Unit"`
@@ -50,6 +51,11 @@ func (y *YamlConfig) ReadFromConfigFile() []ServiceDef {
 	err = yaml.Unmarshal(yamlFile, y)
 	if err != nil {
 		log.Fatalf("Unmarshal failed: %v", err)
+	}
+	for i := range y.Services {
+		if y.Services[i].TypeOfService == "k8s" && y.Services[i].K8s.Deployment == "" {
+			y.Services[i].K8s.Deployment = y.Services[i].K8s.Pod
+		}
 	}
 	return y.Services
 }
