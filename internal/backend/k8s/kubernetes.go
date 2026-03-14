@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sentinel/internal/model"
 	helpers "sentinel/internal/util"
@@ -136,39 +137,53 @@ func (s *Sampler) cpuPercent(serviceID string, usageNano int64, now time.Time) f
 }
 
 func getExternalClusterConfig() (*rest.Config, error) {
-	var kubeconfig string
+	candidates := make([]string, 0, 4)
+	seen := map[string]struct{}{}
 
-	if kubeconfig = os.Getenv("KUBECONFIG"); kubeconfig == "" {
-		if home := homedir.HomeDir(); home != "" {
-			kubeconfig = filepath.Join(home, ".kube", "config")
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		candidates = append(candidates, p)
+	}
+
+	if envKC := strings.TrimSpace(os.Getenv("KUBECONFIG")); envKC != "" {
+		for _, p := range filepath.SplitList(envKC) {
+			add(strings.TrimSpace(p))
 		}
 	}
 
-	if kubeconfig != "" {
-		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if sudoUser := strings.TrimSpace(os.Getenv("SUDO_USER")); sudoUser != "" {
+		if u, err := user.Lookup(sudoUser); err == nil && u.HomeDir != "" {
+			add(filepath.Join(u.HomeDir, ".kube", "config"))
+		} else {
+			add(filepath.Join("/home", sudoUser, ".kube", "config"))
+		}
+	}
+
+	if home := homedir.HomeDir(); home != "" {
+		add(filepath.Join(home, ".kube", "config"))
+	}
+
+	for _, kc := range candidates {
+		if _, err := os.Stat(kc); err != nil {
+			continue
+		}
+		cfg, err := clientcmd.BuildConfigFromFlags("", kc)
 		if err == nil {
-			return config, nil
-		}
-		return nil, fmt.Errorf("failed to build config from kubeconfig: %v", err)
-	}
-
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		if home := homedir.HomeDir(); home != "" {
-			kubeconfig = filepath.Join(home, ".kube", "config")
+			return cfg, nil
 		}
 	}
 
-	if kubeconfig == "" {
-		return nil, fmt.Errorf("kubeconfig not found and in-cluster config unavailable")
+	if cfg, err := rest.InClusterConfig(); err == nil {
+		return cfg, nil
 	}
 
-	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build config from kubeconfig: %v", err)
-	}
-
-	return config, nil
+	return nil, fmt.Errorf("failed to build k8s config; checked: %v", candidates)
 }
 
 func mapPodStatus(pod *corev1.Pod) string {

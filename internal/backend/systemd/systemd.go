@@ -152,6 +152,45 @@ func readMetrics(ctx context.Context, conn *dbus.Conn, unit string) (UnitSample,
 	return u, nil
 }
 
+func SystemdStart(systemdUnit string) (int, error) {
+	ctx := context.Background()
+	conn, err := dbus.NewSystemConnectionContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+
+	ch := make(chan string, 1)
+	result, err := conn.StartUnitContext(ctx, systemdUnit, "replace", ch)
+	return result, nil
+}
+
+func SystemdStop(systemdUnit string) (int, error) {
+	ctx := context.Background()
+	conn, err := dbus.NewSystemConnectionContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+
+	ch := make(chan string, 1)
+	result, err := conn.StopUnitContext(ctx, systemdUnit, "replace", ch)
+	return result, nil
+}
+
+func SystemdRestart(systemdUnit string) (int, error) {
+	ctx := context.Background()
+	conn, err := dbus.NewSystemConnectionContext(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+
+	ch := make(chan string, 1)
+	result, err := conn.RestartUnitContext(ctx, systemdUnit, "replace", ch)
+	return result, err
+}
+
 func mapSystemdStatus(status string) string {
 	switch strings.ToLower(status) {
 	case "active":

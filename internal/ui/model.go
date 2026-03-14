@@ -281,7 +281,18 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					m.refreshCard()
+				case "systemd":
+					systemdUnit := service.Systemd.Unit
+					result, err := systemd.SystemdRestart(systemdUnit)
+					if err != nil && result == 0 {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
 				}
+
 			}
 		case "enter":
 			if m.activeArea == typesFocus && m.contentFocus {
