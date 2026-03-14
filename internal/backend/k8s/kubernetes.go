@@ -203,3 +203,28 @@ func mapPodStatus(pod *corev1.Pod) string {
 		return "degraded"
 	}
 }
+
+func UpdateEnvKubeconfig(newValue, key string) error {
+	input, err := os.ReadFile("./.env")
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(input), "\n")
+	found := false
+	entry := fmt.Sprintf("%s=%s", key, newValue)
+
+	for i, line := range lines {
+		if strings.HasPrefix(line, key+"=") {
+			lines[i] = entry
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		lines = append(lines, entry)
+	}
+
+	output := strings.Join(lines, "\n")
+	return os.WriteFile("./.env", []byte(output), 0644)
+}

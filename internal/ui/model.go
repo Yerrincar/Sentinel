@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sentinel/internal/backend/docker"
 	kubernetes "sentinel/internal/backend/k8s"
 	"sentinel/internal/backend/systemd"
@@ -29,6 +30,7 @@ var (
 	filtersSpaceStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	themesSpaceStyle     = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	remoteConectionStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	kubeconfigStyle      = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	cardStyles           = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 )
 
@@ -42,6 +44,7 @@ const (
 	filtersFocus
 	themesFocus
 	remoteConectionFocus
+	kubeconfigFocus
 )
 
 type MainModel struct {
@@ -67,6 +70,8 @@ type MainModel struct {
 	viewport           viewport.Model
 	workspace          textinput.Model
 	workspaceActivated bool
+	kubeconfig         textinput.Model
+	kubeconfigActive   bool
 	addServiceMode     bool
 	addTypeOptions     []string
 	addTypeCursor      int
@@ -91,6 +96,14 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 	t.SetValue(y.Settings.Workspace.Name)
 	t.Blur()
 	t.Width = 40
+	k := textinput.New()
+	k.Placeholder = ""
+	k.Prompt = "> "
+	k.SetValue(os.Getenv("KUBECONFIG"))
+	k.EchoMode = textinput.EchoPassword
+	k.EchoCharacter = '*'
+	k.Blur()
+	k.Width = 40
 	p := theme.Default()
 	if loaded, err := theme.LoadSelected(); err == nil {
 		p = loaded
@@ -111,6 +124,8 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 		interval:           y.Interval(),
 		workspace:          t,
 		workspaceActivated: false,
+		kubeconfig:         k,
+		kubeconfigActive:   false,
 		themes:             allThemes,
 		selectedTheme:      p.Name,
 		palette:            p,
@@ -175,30 +190,51 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleAddServiceUpdate(msg)
 	}
 
-	//workspace input text
-	if m.workspaceActivated == true {
+	//text input mode
+	if m.workspaceActivated || m.kubeconfigActive {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
 			case "esc":
-				m.workspaceActivated = false
-				m.workspace.Blur()
+				if m.workspaceActivated {
+					m.workspaceActivated = false
+					m.workspace.Blur()
+				}
+				if m.kubeconfigActive {
+					m.kubeconfigActive = false
+					m.kubeconfig.Blur()
+				}
 				return m, nil
 			case "enter":
-				workspaceText := strings.TrimSpace(m.workspace.Value())
-				if workspaceText != "" {
-					m.configHandler.WriteYamlConfigFile(workspaceText)
+				if m.workspaceActivated {
+					workspaceText := strings.TrimSpace(m.workspace.Value())
+					if workspaceText != "" {
+						m.configHandler.WriteYamlConfigFile(workspaceText)
+					}
+					m.workspaceActivated = false
+					m.workspace.Blur()
+					return m, nil
 				}
-				m.workspaceActivated = false
-				m.workspace.Blur()
+				if m.kubeconfigActive {
+					kubeconfigText := strings.TrimSpace(m.kubeconfig.Value())
+					_ = kubernetes.UpdateEnvKubeconfig(kubeconfigText, "KUBECONFIG")
+					m.kubeconfigActive = false
+					m.kubeconfig.Blur()
+					return m, nil
+				}
 				return m, nil
 			}
 		}
-		var cmdWorkspace tea.Cmd
-		m.workspace, cmdWorkspace = m.workspace.Update(msg)
-		return m, cmdWorkspace
+		if m.workspaceActivated {
+			var cmdWorkspace tea.Cmd
+			m.workspace, cmdWorkspace = m.workspace.Update(msg)
+			return m, cmdWorkspace
+		}
+		var cmdKubeconfig tea.Cmd
+		m.kubeconfig, cmdKubeconfig = m.kubeconfig.Update(msg)
+		return m, cmdKubeconfig
 	}
 	//normal Update func
 	switch msg := msg.(type) {
@@ -239,6 +275,17 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					m.refreshCard()
+				case "systemd":
+					systemdUnit := service.Systemd.Unit
+					result, err := systemd.SystemdStart(systemdUnit)
+					if err != nil && result == 0 {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
 				}
 			}
 		case "t":
@@ -253,6 +300,17 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					dockerContainer := service.Docker.ContainerName
 					err := docker.DockerStop(dockerContainer)
 					if err != nil {
+						rt := m.runtimeByID[service.Id]
+						rt.ErrorMsg = err.Error()
+						m.runtimeByID[service.Id] = rt
+						m.syncServiceItem(serviceIdx)
+						break
+					}
+					m.refreshCard()
+				case "systemd":
+					systemdUnit := service.Systemd.Unit
+					result, err := systemd.SystemdStop(systemdUnit)
+					if err != nil && result == 0 {
 						rt := m.runtimeByID[service.Id]
 						rt.ErrorMsg = err.Error()
 						m.runtimeByID[service.Id] = rt
@@ -291,6 +349,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.syncServiceItem(serviceIdx)
 						break
 					}
+					m.refreshCard()
 				}
 
 			}
@@ -323,6 +382,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeArea == workSpaceFocus {
 				m.workspaceActivated = true
 				m.workspace.Focus()
+				return m, nil
+			}
+			if m.activeArea == kubeconfigFocus {
+				m.kubeconfigActive = true
+				m.kubeconfig.Focus()
 				return m, nil
 			}
 		case "esc":
@@ -410,6 +474,7 @@ func (m *MainModel) View() string {
 	typesSpaceStyle := typesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
 	filtersSpaceStyle := filtersSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
 	remoteConectionStyle := remoteConectionStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
+	kubeconfigStyle := kubeconfigStyle.Height(m.height/12).Width(int(float64(m.width)*0.33)).MarginLeft(1).Align(lipgloss.Left, lipgloss.Center)
 	themesSpaceStyle := themesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
 	servicesCardsStyle := cardStyles.Width(m.serviceWidth).Height(m.serviceHeight).MarginLeft(2).MarginTop(1)
 
@@ -420,12 +485,22 @@ func (m *MainModel) View() string {
 			Padding(0, 1).
 			Render(m.workspace.View())
 	}
+	kubeconfigContent := lipgloss.NewStyle().
+		PaddingLeft(1).
+		Render("> " + strings.Repeat("*", len([]rune(m.kubeconfig.Value()))))
+	if m.kubeconfigActive {
+		kubeconfigContent = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Padding(0, 1).
+			Render(m.kubeconfig.View())
+	}
 	servicesContent := m.renderServicesGrid(servicesCardsStyle, m.selectedType, m.selectedState)
 	servicesPanel := helpers.BorderTitle(servicesSideStyle.Render(servicesContent), "Services")
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.Render(workspaceContent), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(m.renderListPanel(typesSpaceStyle, m.typeOptions, m.typeCursor, m.contentFocus && m.activeArea == typesFocus, m.selectedType, m.typeValueByLabel), "Types")
 	filtersSpacePanel := helpers.BorderTitle(m.renderListPanel(filtersSpaceStyle, m.filterOptions, m.filterCursor, m.contentFocus && m.activeArea == filtersFocus, m.selectedState, m.filterValueByLabel), "Filters")
 	remoteSpacePanel := helpers.BorderTitle(remoteConectionStyle.String(), "Remote Conection")
+	kubeconfigPanel := helpers.BorderTitle(kubeconfigStyle.Render(kubeconfigContent), "Kubeconfig")
 	themesSpacePanel := helpers.BorderTitle(m.renderThemesPanel(themesSpaceStyle), "Themes")
 
 	servicesPanel = helpers.ColorOuterPanelBorder(servicesPanel, border)
@@ -433,6 +508,7 @@ func (m *MainModel) View() string {
 	typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, border)
 	filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, border)
 	remoteSpacePanel = helpers.ColorPanelBorder(remoteSpacePanel, border)
+	kubeconfigPanel = helpers.ColorPanelBorder(kubeconfigPanel, border)
 	themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, border)
 
 	servicesPanel = m.colorPanelTitle(servicesPanel, "Services", lipgloss.Color(m.palette.TitleServices))
@@ -440,6 +516,7 @@ func (m *MainModel) View() string {
 	typesSpacePanel = m.colorPanelTitle(typesSpacePanel, "Types", lipgloss.Color(m.palette.TitleTypes))
 	filtersSpacePanel = m.colorPanelTitle(filtersSpacePanel, "Filters", lipgloss.Color(m.palette.TitleFilters))
 	remoteSpacePanel = m.colorPanelTitle(remoteSpacePanel, "Remote Conection", lipgloss.Color(m.palette.TitleRemote))
+	kubeconfigPanel = m.colorPanelTitle(kubeconfigPanel, "Kubeconfig", lipgloss.Color(m.palette.TitleKubeconfig))
 	themesSpacePanel = m.colorPanelTitle(themesSpacePanel, "Themes", lipgloss.Color(m.palette.TitleThemes))
 
 	switch m.activeArea {
@@ -455,12 +532,15 @@ func (m *MainModel) View() string {
 		themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, focus)
 	case remoteConectionFocus:
 		remoteSpacePanel = helpers.ColorPanelBorder(remoteSpacePanel, focus)
+	case kubeconfigFocus:
+		kubeconfigPanel = helpers.ColorPanelBorder(kubeconfigPanel, focus)
 	}
 
 	sidePanels := lipgloss.JoinVertical(lipgloss.Left, workSpacePanel, lipgloss.JoinHorizontal(lipgloss.Left,
 		typesSpacePanel,
 		filtersSpacePanel),
 		remoteSpacePanel,
+		kubeconfigPanel,
 		themesSpacePanel)
 
 	footer := lipgloss.NewStyle().
@@ -1128,12 +1208,21 @@ func (m *MainModel) moveFocus(dir string) {
 		case "right", "l":
 			m.activeArea = servicesFocus
 		case "down", "j":
+			m.activeArea = kubeconfigFocus
+		}
+	case kubeconfigFocus:
+		switch dir {
+		case "up", "k":
+			m.activeArea = remoteConectionFocus
+		case "right", "l":
+			m.activeArea = servicesFocus
+		case "down", "j":
 			m.activeArea = themesFocus
 		}
 	case themesFocus:
 		switch dir {
 		case "up", "k":
-			m.activeArea = remoteConectionFocus
+			m.activeArea = kubeconfigFocus
 		case "right", "l":
 			m.activeArea = servicesFocus
 		}

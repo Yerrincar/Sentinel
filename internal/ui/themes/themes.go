@@ -20,6 +20,7 @@ type Palette struct {
 	TitleThemes     string
 	TitleAddService string
 	TitleRemote     string
+	TitleKubeconfig string
 	StateRunning    string
 	StateDegraded   string
 	StateStopped    string
@@ -40,6 +41,7 @@ var palettes = []Palette{
 		TitleThemes:     "#A0C4FF",
 		TitleAddService: "#FFD6A5",
 		TitleRemote:     "#CDB4DB",
+		TitleKubeconfig: "#FBCFE8",
 		StateRunning:    "#22C55E",
 		StateDegraded:   "#F59E0B",
 		StateStopped:    "#EF4444",
@@ -58,6 +60,7 @@ var palettes = []Palette{
 		TitleThemes:     "#B48EAD",
 		TitleAddService: "#EBCB8B",
 		TitleRemote:     "#D08770",
+		TitleKubeconfig: "#B48EAD",
 		StateRunning:    "#A3BE8C",
 		StateDegraded:   "#EBCB8B",
 		StateStopped:    "#BF616A",
@@ -76,6 +79,7 @@ var palettes = []Palette{
 		TitleThemes:     "#D3869B",
 		TitleAddService: "#FE8019",
 		TitleRemote:     "#FB4934",
+		TitleKubeconfig: "#B16286",
 		StateRunning:    "#8EC07C",
 		StateDegraded:   "#FABD2F",
 		StateStopped:    "#FB4934",
@@ -94,6 +98,7 @@ var palettes = []Palette{
 		TitleThemes:     "#FF79C6",
 		TitleAddService: "#FFB86C",
 		TitleRemote:     "#FF5555",
+		TitleKubeconfig: "#BD93F9",
 		StateRunning:    "#50FA7B",
 		StateDegraded:   "#F1FA8C",
 		StateStopped:    "#FF5555",
@@ -112,6 +117,7 @@ var palettes = []Palette{
 		TitleThemes:     "#93C5FD",
 		TitleAddService: "#FCA5A5",
 		TitleRemote:     "#C4B5FD",
+		TitleKubeconfig: "#FDBA74",
 		StateRunning:    "#22C55E",
 		StateDegraded:   "#EAB308",
 		StateStopped:    "#F43F5E",
