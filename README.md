@@ -75,6 +75,11 @@ make init
 sudo make run
 ```
 
+## Documentation
+
+- Development guide: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
+- Architecture guide: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
 ## Configuration
 
 Sentinel reads services and settings from:
