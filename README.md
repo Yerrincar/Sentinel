@@ -129,6 +129,11 @@ Sentinel currently stores runtime configuration in local files.
 - k8s logs/metrics depend on deployment health and image availability.
 - Logs widget is preview-oriented; full external log pane behavior can be extended.
 
+## Future incorporations
+
+- Testing
+- Remote connection to other devices via SSH
+
 ## License
 
 MIT License. See [`LICENSE`](LICENSE).
