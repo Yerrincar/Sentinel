@@ -13,6 +13,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -130,6 +131,10 @@ func GetMetricsFromDeployment(deploymentName, namespace string) model.ServiceRun
 	if pod.Status.StartTime != nil {
 		s.Uptime = helpers.FormatUptime(time.Since(pod.Status.StartTime.Time))
 	}
+	if pullErr := imagePullError(&pod); pullErr != "" {
+		s.ErrorMsg = pullErr
+		return s
+	}
 
 	metricsClient, err := k8sMetrics.NewForConfig(config)
 	if err != nil {
@@ -139,6 +144,10 @@ func GetMetricsFromDeployment(deploymentName, namespace string) model.ServiceRun
 
 	metrics, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).Get(ctx, pod.Name, metav1.GetOptions{})
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			s.ErrorMsg = "Collecting metrics..."
+			return s
+		}
 		s.ErrorMsg = err.Error()
 		return s
 	}
@@ -256,6 +265,25 @@ func pickDeploymentPod(pods []corev1.Pod) corev1.Pod {
 		}
 	}
 	return pods[0]
+}
+
+func imagePullError(pod *corev1.Pod) string {
+	check := func(statuses []corev1.ContainerStatus) string {
+		for _, cs := range statuses {
+			if cs.State.Waiting == nil {
+				continue
+			}
+			reason := cs.State.Waiting.Reason
+			if reason == "ErrImagePull" || reason == "ImagePullBackOff" {
+				return reason
+			}
+		}
+		return ""
+	}
+	if reason := check(pod.Status.InitContainerStatuses); reason != "" {
+		return reason
+	}
+	return check(pod.Status.ContainerStatuses)
 }
 
 func (s *Sampler) cpuPercent(serviceID string, usageNano int64, now time.Time) float64 {
