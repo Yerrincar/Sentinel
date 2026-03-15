@@ -4,6 +4,7 @@ TUI service dashboard to manage and monitor services operations and live status.
 
 ## Demo
 
+https://github.com/user-attachments/assets/5a587c59-5372-4de1-9778-8e2e0bb9ff87
 
 ## Highlights
 
