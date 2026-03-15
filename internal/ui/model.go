@@ -28,7 +28,7 @@ var (
 	workSpaceStyle       = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	typesSpaceStyle      = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	filtersSpaceStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
-	themesSpaceStyle     = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
+	logsSpaceStyle       = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	remoteConectionStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	kubeconfigStyle      = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
 	cardStyles           = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true)
@@ -42,7 +42,7 @@ const (
 	workSpaceFocus
 	typesFocus
 	filtersFocus
-	themesFocus
+	logsFocus
 	remoteConectionFocus
 	kubeconfigFocus
 )
@@ -82,7 +82,8 @@ type MainModel struct {
 	addFieldCursor      int
 	addInputs           []textinput.Model
 	addError            string
-	themesViewport      viewport.Model
+	logsViewport        viewport.Model
+	logsContent         string
 	themes              []theme.Palette
 	themeCursor         int
 	selectedTheme       string
@@ -135,6 +136,7 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 		deleteServiceMode:   false,
 		deleteServiceIdx:    -1,
 		deleteConfirmCursor: 1,
+		logsContent:         "Logs preview will appear here.\n\nUse Enter to focus this panel and j/k to scroll.\nUse your logs keybinding to open full logs in a new pane.",
 		themes:              allThemes,
 		selectedTheme:       p.Name,
 		palette:             p,
@@ -270,6 +272,9 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.startDeleteService(serviceIdx)
 				}
 			}
+			return m, nil
+		case "T", "shift+t":
+			m.cycleTheme(1)
 			return m, nil
 		case "c":
 			m.selectedType = ""
@@ -410,23 +415,13 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeArea == filtersFocus && m.contentFocus {
 				m.selectedState = m.filterValueByOption()
 			}
-			if m.activeArea == themesFocus && m.contentFocus {
-				if m.themeCursor >= 0 && m.themeCursor < len(m.themes) {
-					m.palette = m.themes[m.themeCursor]
-					m.selectedTheme = m.palette.Name
-					_ = theme.SaveSelected(m.selectedTheme)
-				}
-			}
-			if m.activeArea == servicesFocus || m.activeArea == typesFocus || m.activeArea == filtersFocus || m.activeArea == themesFocus {
+			if m.activeArea == servicesFocus || m.activeArea == typesFocus || m.activeArea == filtersFocus || m.activeArea == logsFocus {
 				m.contentFocus = !m.contentFocus
 				if m.contentFocus && m.cursor < 0 {
 					m.cursor = 0
 				}
 				if m.contentFocus && m.activeArea == filtersFocus && m.filterCursor < 0 {
 					m.filterCursor = 0
-				}
-				if m.contentFocus && m.activeArea == themesFocus && m.themeCursor < 0 {
-					m.themeCursor = 0
 				}
 			}
 			if m.activeArea == workSpaceFocus {
@@ -448,8 +443,8 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveListCursor("up", &m.typeCursor, len(m.typeOptions))
 			} else if m.contentFocus && m.activeArea == filtersFocus {
 				m.moveListCursor("up", &m.filterCursor, len(m.filterOptions))
-			} else if m.contentFocus && m.activeArea == themesFocus {
-				m.moveListCursor("up", &m.themeCursor, len(m.themes))
+			} else if m.contentFocus && m.activeArea == logsFocus {
+				m.logsViewport.LineUp(1)
 			} else if !m.contentFocus {
 				m.moveFocus("up")
 			}
@@ -460,8 +455,8 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveListCursor("down", &m.typeCursor, len(m.typeOptions))
 			} else if m.contentFocus && m.activeArea == filtersFocus {
 				m.moveListCursor("down", &m.filterCursor, len(m.filterOptions))
-			} else if m.contentFocus && m.activeArea == themesFocus {
-				m.moveListCursor("down", &m.themeCursor, len(m.themes))
+			} else if m.contentFocus && m.activeArea == logsFocus {
+				m.logsViewport.LineDown(1)
 			} else if !m.contentFocus {
 				m.moveFocus("down")
 			}
@@ -524,7 +519,7 @@ func (m *MainModel) View() string {
 	typesSpaceStyle := typesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
 	filtersSpaceStyle := filtersSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
 	kubeconfigStyle := kubeconfigStyle.Height(m.height/12).Width(int(float64(m.width)*0.33)).MarginLeft(1).Align(lipgloss.Left, lipgloss.Center)
-	themesSpaceStyle := themesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height/2 - 6).MarginLeft(1)
+	logsSpaceStyle := logsSpaceStyle.Width(int(float64(m.width) * 0.33)).Height(m.height/3 + 6).MarginLeft(1)
 	servicesCardsStyle := cardStyles.Width(m.serviceWidth).Height(m.serviceHeight).MarginLeft(2).MarginTop(1)
 
 	workspaceContent := m.workspace.View()
@@ -550,21 +545,21 @@ func (m *MainModel) View() string {
 	filtersSpacePanel := helpers.BorderTitle(m.renderListPanel(filtersSpaceStyle, m.filterOptions, m.filterCursor, m.contentFocus && m.activeArea == filtersFocus, m.selectedState, m.filterValueByLabel), "Filters")
 	// remoteSpacePanel disabled for MVP; keep widget code for future remote feature.
 	kubeconfigPanel := helpers.BorderTitle(kubeconfigStyle.Render(kubeconfigContent), "Kubeconfig")
-	themesSpacePanel := helpers.BorderTitle(m.renderThemesPanel(themesSpaceStyle), "Themes")
+	logsSidePanel := helpers.BorderTitle(m.renderLogsPanel(logsSpaceStyle), "Logs")
 
 	servicesPanel = helpers.ColorOuterPanelBorder(servicesPanel, border)
 	workSpacePanel = helpers.ColorPanelBorder(workSpacePanel, border)
 	typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, border)
 	filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, border)
 	kubeconfigPanel = helpers.ColorPanelBorder(kubeconfigPanel, border)
-	themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, border)
+	logsSidePanel = helpers.ColorPanelBorder(logsSidePanel, border)
 
 	servicesPanel = m.colorPanelTitle(servicesPanel, "Services", lipgloss.Color(m.palette.TitleServices))
 	workSpacePanel = m.colorPanelTitle(workSpacePanel, "Workspace", lipgloss.Color(m.palette.TitleWorkspace))
 	typesSpacePanel = m.colorPanelTitle(typesSpacePanel, "Types", lipgloss.Color(m.palette.TitleTypes))
 	filtersSpacePanel = m.colorPanelTitle(filtersSpacePanel, "Filters", lipgloss.Color(m.palette.TitleFilters))
 	kubeconfigPanel = m.colorPanelTitle(kubeconfigPanel, "Kubeconfig", lipgloss.Color(m.palette.TitleKubeconfig))
-	themesSpacePanel = m.colorPanelTitle(themesSpacePanel, "Themes", lipgloss.Color(m.palette.TitleThemes))
+	logsSidePanel = m.colorPanelTitle(logsSidePanel, "Logs", lipgloss.Color(m.palette.TitleThemes))
 
 	switch m.activeArea {
 	case servicesFocus:
@@ -575,8 +570,8 @@ func (m *MainModel) View() string {
 		typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, focus)
 	case filtersFocus:
 		filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, focus)
-	case themesFocus:
-		themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, focus)
+	case logsFocus:
+		logsSidePanel = helpers.ColorPanelBorder(logsSidePanel, focus)
 	case kubeconfigFocus:
 		kubeconfigPanel = helpers.ColorPanelBorder(kubeconfigPanel, focus)
 	}
@@ -585,12 +580,12 @@ func (m *MainModel) View() string {
 		typesSpacePanel,
 		filtersSpacePanel),
 		kubeconfigPanel,
-		themesSpacePanel)
+		logsSidePanel)
 
 	footer := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(m.palette.Selected)).
 		PaddingLeft(1).
-		Render("Move: ↑↓→← / hjkl | Select: enter | Clear filters: c | Add service: a | Delete: d | Quit: ctrl+c/q")
+		Render("Move: ↑↓→← / hjkl | Select: enter | Theme: T | Clear filters: c | Add service: a | Delete: d | Quit: ctrl+c/q")
 
 	base := standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Bottom,
 		lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
@@ -1129,7 +1124,7 @@ func (m *MainModel) renderListPanel(panelStyle lipgloss.Style, options []string,
 	return panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rendered...))
 }
 
-func (m *MainModel) renderThemesPanel(panelStyle lipgloss.Style) string {
+func (m *MainModel) renderLogsPanel(panelStyle lipgloss.Style) string {
 	w := panelStyle.GetWidth() - 2
 	h := panelStyle.GetHeight() - 2
 	if w < 1 {
@@ -1138,43 +1133,41 @@ func (m *MainModel) renderThemesPanel(panelStyle lipgloss.Style) string {
 	if h < 1 {
 		h = 1
 	}
-	if m.themesViewport.Width == 0 && m.themesViewport.Height == 0 {
-		m.themesViewport = viewport.New(w, h)
+	if m.logsViewport.Width == 0 && m.logsViewport.Height == 0 {
+		m.logsViewport = viewport.New(w, h)
 	} else {
-		m.themesViewport.Width = w
-		m.themesViewport.Height = h
+		m.logsViewport.Width = w
+		m.logsViewport.Height = h
 	}
 
-	inactiveStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true).Width(w)
-	activeStyle := inactiveStyle.Foreground(m.focusThemeColor())
-	selectedStyle := inactiveStyle.Foreground(lipgloss.Color(m.palette.Selected))
+	content := m.logsContent
+	serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
+	if serviceIdx >= 0 && serviceIdx < len(m.services) {
+		target := m.deleteTargetLabel(m.services[serviceIdx])
+		content = "Selected: " + target + "\n\n" + m.logsContent
+	}
 
-	lines := make([]string, 0, len(m.themes))
+	m.logsViewport.SetContent(content)
+	return panelStyle.Render(m.logsViewport.View())
+}
+
+func (m *MainModel) cycleTheme(step int) {
+	if len(m.themes) == 0 || step == 0 {
+		return
+	}
+
+	idx := 0
 	for i, p := range m.themes {
-		line := "- " + p.Name
-		if m.contentFocus && m.activeArea == themesFocus && i == m.themeCursor {
-			line = activeStyle.Render("> " + p.Name)
-		} else if p.Name == m.selectedTheme {
-			line = selectedStyle.Render(line)
-		} else {
-			line = inactiveStyle.Render(line)
-		}
-		lines = append(lines, line)
-	}
-
-	m.themesViewport.SetContent(strings.Join(lines, "\n"))
-	if m.contentFocus && m.activeArea == themesFocus {
-		if m.themeCursor < m.themesViewport.YOffset {
-			m.themesViewport.YOffset = m.themeCursor
-		}
-		if m.themeCursor >= m.themesViewport.YOffset+m.themesViewport.Height {
-			m.themesViewport.YOffset = m.themeCursor - m.themesViewport.Height + 1
-		}
-		if m.themesViewport.YOffset < 0 {
-			m.themesViewport.YOffset = 0
+		if p.Name == m.selectedTheme {
+			idx = i
+			break
 		}
 	}
-	return panelStyle.Render(m.themesViewport.View())
+	idx = (idx + step + len(m.themes)) % len(m.themes)
+	m.themeCursor = idx
+	m.palette = m.themes[idx]
+	m.selectedTheme = m.palette.Name
+	_ = theme.SaveSelected(m.selectedTheme)
 }
 
 func (m *MainModel) filteredServiceIndex(filteredIdx int, selectedType, selectedState string) int {
@@ -1377,9 +1370,9 @@ func (m *MainModel) moveFocus(dir string) {
 		case "right", "l":
 			m.activeArea = servicesFocus
 		case "down", "j":
-			m.activeArea = themesFocus
+			m.activeArea = logsFocus
 		}
-	case themesFocus:
+	case logsFocus:
 		switch dir {
 		case "up", "k":
 			m.activeArea = kubeconfigFocus
