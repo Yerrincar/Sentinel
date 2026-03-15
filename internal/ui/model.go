@@ -1497,12 +1497,34 @@ func (m *MainModel) moveServicesCursor(dir string, total int) {
 			m.cursor++
 		}
 	case "up", "k":
-		if m.cursor-cols >= 0 {
-			m.cursor -= cols
+		row := m.cursor / cols
+		col := m.cursor % cols
+		if row > 0 {
+			prevStart := (row - 1) * cols
+			prevEnd := prevStart + cols - 1
+			if prevEnd >= total {
+				prevEnd = total - 1
+			}
+			target := prevStart + col
+			if target > prevEnd {
+				target = prevEnd
+			}
+			m.cursor = target
 		}
 	case "down", "j":
-		if m.cursor+cols < total {
-			m.cursor += cols
+		row := m.cursor / cols
+		col := m.cursor % cols
+		nextStart := (row + 1) * cols
+		if nextStart < total {
+			nextEnd := nextStart + cols - 1
+			if nextEnd >= total {
+				nextEnd = total - 1
+			}
+			target := nextStart + col
+			if target > nextEnd {
+				target = nextEnd
+			}
+			m.cursor = target
 		}
 	}
 }

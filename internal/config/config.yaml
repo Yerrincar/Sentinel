@@ -11,12 +11,6 @@ Services:
         Container: sentinel-docker-demo
       Type: docker
       Url: ""
-    - Id: sentinel-docker-demo2-id
-      Name: Demo2
-      Docker:
-        Container: sentinel-docker-demo2
-      Type: docker
-      Url: ""
     - Id: sentinel-systemd-demo-id
       Name: Systemd-Demo
       Systemd:
@@ -29,3 +23,51 @@ Services:
         Namespace: sentinel-demo
         Deployment: sentinel-k8s-demo
       Type: k8s
+    - Id: example
+      Name: example
+      Docker:
+        Container: example
+      K8s:
+        Context: ""
+        Namespace: ""
+        Deployment: ""
+      Systemd:
+        Unit: ""
+      Type: docker
+      Url: example
+    - Id: example2
+      Name: example2
+      Docker:
+        Container: example2
+      K8s:
+        Context: ""
+        Namespace: ""
+        Deployment: ""
+      Systemd:
+        Unit: ""
+      Type: docker
+      Url: example2
+    - Id: example3
+      Name: example3
+      Docker:
+        Container: example3
+      K8s:
+        Context: ""
+        Namespace: ""
+        Deployment: ""
+      Systemd:
+        Unit: ""
+      Type: docker
+      Url: example3
+    - Id: example4
+      Name: example4
+      Docker:
+        Container: example4
+      K8s:
+        Context: ""
+        Namespace: ""
+        Deployment: ""
+      Systemd:
+        Unit: ""
+      Type: docker
+      Url: example4
