@@ -183,10 +183,20 @@ func (m *MainModel) Init() tea.Cmd {
 			m.items = append(m.items, serviceInfo...)
 		}
 	}
+	m.refreshLogsPreview()
 	return m.tickCmd()
 }
 
 func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if tick, ok := msg.(TickMsg); ok {
+		if m.interval > 0 {
+			m.lastTick = time.Time(tick)
+			m.refreshCard()
+			m.refreshLogsPreview()
+			return m, m.tickCmd()
+		}
+	}
+
 	leng := len(m.items)
 	if m.selectedType != "" || m.selectedState != "" {
 		leng = 0
@@ -252,12 +262,6 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	//normal Update func
 	switch msg := msg.(type) {
-	case TickMsg:
-		if m.interval > 0 {
-			m.lastTick = time.Time(msg)
-			m.refreshCard()
-			return m, m.tickCmd()
-		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -273,15 +277,19 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case "T", "shift+t":
+		case "t":
 			m.cycleTheme(1)
+			return m, nil
+		case "T", "shift+t":
+			m.cycleTheme(-1)
 			return m, nil
 		case "c":
 			m.selectedType = ""
 			m.selectedState = ""
 			m.typeCursor = 0
 			m.filterCursor = 0
-		case "s":
+			m.refreshLogsPreview()
+		case " ":
 			if m.activeArea == servicesFocus && m.contentFocus {
 				serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
 				if serviceIdx < 0 || serviceIdx >= len(m.services) {
@@ -323,7 +331,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.refreshCard()
 				}
 			}
-		case "t":
+		case "s":
 			if m.activeArea == servicesFocus && m.contentFocus {
 				serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
 				if serviceIdx < 0 || serviceIdx >= len(m.services) {
@@ -411,9 +419,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.activeArea == typesFocus && m.contentFocus {
 				m.selectedType = m.typeValueByOption()
+				m.refreshLogsPreview()
 			}
 			if m.activeArea == filtersFocus && m.contentFocus {
 				m.selectedState = m.filterValueByOption()
+				m.refreshLogsPreview()
 			}
 			if m.activeArea == servicesFocus || m.activeArea == typesFocus || m.activeArea == filtersFocus || m.activeArea == logsFocus {
 				m.contentFocus = !m.contentFocus
@@ -439,6 +449,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("up", leng)
+				m.refreshLogsPreview()
 			} else if m.contentFocus && m.activeArea == typesFocus {
 				m.moveListCursor("up", &m.typeCursor, len(m.typeOptions))
 			} else if m.contentFocus && m.activeArea == filtersFocus {
@@ -451,6 +462,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("down", leng)
+				m.refreshLogsPreview()
 			} else if m.contentFocus && m.activeArea == typesFocus {
 				m.moveListCursor("down", &m.typeCursor, len(m.typeOptions))
 			} else if m.contentFocus && m.activeArea == filtersFocus {
@@ -463,12 +475,14 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "left", "h":
 			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("left", leng)
+				m.refreshLogsPreview()
 			} else if !m.contentFocus {
 				m.moveFocus("left")
 			}
 		case "right", "l":
 			if m.contentFocus && m.activeArea == servicesFocus {
 				m.moveServicesCursor("right", leng)
+				m.refreshLogsPreview()
 			} else if !m.contentFocus {
 				m.moveFocus("right")
 			}
@@ -585,7 +599,7 @@ func (m *MainModel) View() string {
 	footer := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(m.palette.Selected)).
 		PaddingLeft(1).
-		Render("Move: ↑↓→← / hjkl | Select: enter | Theme: T | Clear filters: c | Add service: a | Delete: d | Quit: ctrl+c/q")
+		Render("Move: ↑↓→← / hjkl | Select: enter | Theme: t / Shift+T | Clear filters: c | Add service: a | Delete: d | Quit: ctrl+c/q | Start/Stop/Restart Services: space/s/r")
 
 	base := standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Bottom,
 		lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
@@ -663,6 +677,7 @@ func (m *MainModel) handleDeleteServiceUpdate(msg tea.Msg) (tea.Model, tea.Cmd) 
 			m.deleteServiceIdx = -1
 			m.deleteError = ""
 			m.refreshCard()
+			m.refreshLogsPreview()
 			return m, nil
 		}
 	}
@@ -1147,7 +1162,7 @@ func (m *MainModel) renderLogsPanel(panelStyle lipgloss.Style) string {
 		content = "Selected: " + target + "\n\n" + m.logsContent
 	}
 
-	m.logsViewport.SetContent(content)
+	m.logsViewport.SetContent(wrapToWidth(content, w))
 	return panelStyle.Render(m.logsViewport.View())
 }
 
@@ -1319,6 +1334,79 @@ func (m *MainModel) refreshCard() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+func (m *MainModel) refreshLogsPreview() {
+	serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
+	if serviceIdx < 0 || serviceIdx >= len(m.services) {
+		m.logsContent = "No service selected."
+		return
+	}
+
+	s := m.services[serviceIdx]
+	var (
+		logs string
+		err  error
+	)
+
+	switch s.TypeOfService {
+	case "docker":
+		logs, err = docker.GetLogsFromContainer(s.Docker.ContainerName)
+	case "systemd":
+		logs, err = systemd.GetUnitLogs(s.Systemd.Unit)
+	case "k8s":
+		logs, err = kubernetes.GetLogsFromDeployment(s.K8s.Namespace, s.K8s.Deployment, 200)
+	default:
+		m.logsContent = "Logs not supported for this service."
+		return
+	}
+
+	if err != nil {
+		m.logsContent = "Error getting logs: " + err.Error()
+		return
+	}
+
+	logs = strings.TrimSpace(lastNLines(logs, 120))
+	if logs == "" {
+		m.logsContent = "No logs available."
+		return
+	}
+	m.logsContent = logs
+}
+
+func lastNLines(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	if len(lines) <= n {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[len(lines)-n:], "\n")
+}
+
+func wrapToWidth(s string, width int) string {
+	if width <= 1 {
+		return s
+	}
+
+	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		r := []rune(line)
+		if len(r) == 0 {
+			out = append(out, "")
+			continue
+		}
+		for len(r) > width {
+			out = append(out, string(r[:width]))
+			r = r[width:]
+		}
+		out = append(out, string(r))
+	}
+
+	return strings.Join(out, "\n")
 }
 
 func (m *MainModel) moveFocus(dir string) {

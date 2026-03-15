@@ -11,6 +11,7 @@ import (
 	"time"
 
 	dbus "github.com/coreos/go-systemd/v22/dbus"
+	"github.com/coreos/go-systemd/v22/sdjournal"
 )
 
 type cpuSample struct {
@@ -82,6 +83,43 @@ func (s *Sampler) cpuMetrics(serviceID string, currUsage uint64, now time.Time) 
 		return 0.0
 	}
 	return helpers.CPUPercent(prev.usageUsec, currUsage, prev.at, now)
+}
+
+func GetUnitLogs(unitName string) (string, error) {
+	r, err := sdjournal.NewJournal()
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	err = r.AddMatch("_SYSTEMD_UNIT=" + unitName)
+	if err != nil {
+		return "", err
+	}
+
+	if err := r.SeekTail(); err == nil {
+		_, _ = r.PreviousSkip(200)
+	}
+
+	var b strings.Builder
+	for {
+		n, err := r.Next()
+		if err != nil {
+			return "", err
+		}
+		if n == 0 {
+			break
+		}
+
+		entry, err := r.GetEntry()
+		if err != nil {
+			continue
+		}
+
+		_, _ = b.WriteString(fmt.Sprintf("%s\n", entry.Fields["MESSAGE"]))
+	}
+
+	return b.String(), nil
 }
 
 func readMetrics(ctx context.Context, conn *dbus.Conn, unit string) (UnitSample, error) {

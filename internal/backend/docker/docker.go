@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -92,6 +94,32 @@ func GetMetricsFromContainer(dockerContainer string) model.ServiceRuntime {
 	return r
 }
 
+func GetLogsFromContainer(dockerContainerName string) (string, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		return "", err
+	}
+
+	logs, err := cli.ContainerLogs(ctx, dockerContainerName, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       "200",
+	})
+	if err != nil {
+		return err.Error(), err
+	}
+	defer logs.Close()
+
+	var outBuf, errBuf bytes.Buffer
+	_, err = stdcopy.StdCopy(&outBuf, &errBuf, logs)
+	if err != nil {
+		return err.Error(), err
+	}
+	return outBuf.String(), nil
+}
 func DockerStart(dockerContainerName string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -1,9 +1,11 @@
 package kubernetes
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -183,6 +185,75 @@ func GetDeployment(deploymentName, namespace string) error {
 	}
 
 	return nil
+}
+
+func GetPodLogs(namespace, podName string, tailLines int64) (string, error) {
+	config, err := getExternalClusterConfig()
+	if err != nil {
+		return "", err
+	}
+	clientset, err := k8s.NewForConfig(config)
+	if err != nil {
+		return "", err
+	}
+
+	podLogOptions := corev1.PodLogOptions{
+		TailLines: &tailLines,
+		Follow:    false,
+	}
+
+	req := clientset.CoreV1().Pods(namespace).GetLogs(podName, &podLogOptions)
+
+	podLogs, err := req.Stream(context.Background())
+	if err != nil {
+		return "", fmt.Errorf("error in opening stream: %v", err)
+	}
+	defer podLogs.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, podLogs)
+	if err != nil {
+		return "", fmt.Errorf("error in copy information from podLogs to buf: %v", err)
+	}
+
+	return buf.String(), nil
+}
+
+func GetLogsFromDeployment(namespace, deploymentName string, tailLines int64) (string, error) {
+	config, err := getExternalClusterConfig()
+	if err != nil {
+		return "", err
+	}
+	clientset, err := k8s.NewForConfig(config)
+	if err != nil {
+		return "", err
+	}
+
+	ctx := context.Background()
+	deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	if deployment.Spec.Selector == nil {
+		return "", fmt.Errorf("deployment selector is empty")
+	}
+	selector, err := metav1.LabelSelectorAsSelector(deployment.Spec.Selector)
+	if err != nil {
+		return "", err
+	}
+
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: selector.String(),
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(pods.Items) == 0 {
+		return "", fmt.Errorf("no pods found for deployment")
+	}
+
+	pod := pickDeploymentPod(pods.Items)
+	return GetPodLogs(namespace, pod.Name, tailLines)
 }
 
 func K8sStart(namespace, deploymentName string) error {
