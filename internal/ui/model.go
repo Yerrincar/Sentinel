@@ -147,40 +147,19 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 
 func (m *MainModel) Init() tea.Cmd {
 	for _, t := range m.services {
-		serviceInfo := make([]string, 0)
 		switch t.TypeOfService {
 		case "docker":
 			dockerStats := docker.GetMetricsFromContainer(t.Docker.ContainerName)
 			m.runtimeByID[t.Id] = dockerStats
-			dockerMetrics := m.runtimeByID[t.Id]
-			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.Docker.ContainerName+"\n"+t.Url+
-				"\n"+
-				strconv.FormatFloat(dockerMetrics.Cpu, 'f', 2, 64)+" %"+"\n"+
-				dockerMetrics.Mem+" / "+dockerMetrics.MemLimit+"\n"+
-				dockerMetrics.Status+"\n"+
-				dockerMetrics.Uptime+"\n"+
-				"\n"+dockerMetrics.ErrorMsg)
-			m.items = append(m.items, serviceInfo...)
+			m.items = append(m.items, m.buildServiceItem(t, dockerStats))
 		case "systemd":
 			systemdStats := m.samplerStruct.GetSystemdMetrics(t.Id, t.Systemd.Unit)
 			m.runtimeByID[t.Id] = systemdStats
-			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.Systemd.Unit+"\n"+"\n"+
-				strconv.FormatFloat(systemdStats.Cpu, 'f', 2, 64)+" %"+"\n"+
-				systemdStats.Mem+" / "+systemdStats.MemLimit+"\n"+
-				systemdStats.Status+"\n"+
-				systemdStats.Uptime+"\n"+
-				systemdStats.ErrorMsg)
-			m.items = append(m.items, serviceInfo...)
+			m.items = append(m.items, m.buildServiceItem(t, systemdStats))
 		case "k8s":
 			k8sStats := kubernetes.GetMetricsFromDeployment(t.K8s.Deployment, t.K8s.Namespace)
 			m.runtimeByID[t.Id] = k8sStats
-			serviceInfo = append(serviceInfo, t.Id+"\n"+t.Name+"\n"+t.K8s.Deployment+"\n"+
-				strconv.FormatFloat(k8sStats.Cpu, 'f', 2, 64)+" %"+"\n"+
-				k8sStats.Mem+" / "+k8sStats.MemLimit+"\n"+
-				k8sStats.Status+"\n"+
-				k8sStats.Uptime+"\n"+
-				k8sStats.ErrorMsg)
-			m.items = append(m.items, serviceInfo...)
+			m.items = append(m.items, m.buildServiceItem(t, k8sStats))
 		}
 	}
 	m.refreshLogsPreview()
@@ -1260,33 +1239,7 @@ func (m *MainModel) syncServiceItem(serviceIdx int) {
 	}
 	s := m.services[serviceIdx]
 	rt := m.runtimeByID[s.Id]
-
-	var item string
-	switch s.TypeOfService {
-	case "docker":
-		item = s.Id + "\n" + s.Name + "\n" + s.Docker.ContainerName + "\n" + s.Url + "\n" +
-			strconv.FormatFloat(rt.Cpu, 'f', 2, 64) + " %\n" + rt.Mem + " / " +
-			rt.MemLimit + "\n" +
-			rt.Status + "\n" +
-			rt.Uptime + "\n" +
-			rt.ErrorMsg
-	case "systemd":
-		item = s.Id + "\n" + s.Name + "\n" + s.Systemd.Unit + "\n\n" +
-			strconv.FormatFloat(rt.Cpu, 'f', 2, 64) + " %\n" +
-			rt.Mem + " / " + rt.MemLimit + "\n" +
-			rt.Status + "\n" +
-			rt.Uptime + "\n" +
-			rt.ErrorMsg
-	case "k8s":
-		item = s.Id + "\n" + s.Name + "\n" + s.K8s.Deployment + "\n" +
-			strconv.FormatFloat(rt.Cpu, 'f', 2, 64) + " %\n" +
-			rt.Mem + " / " + rt.MemLimit + "\n" +
-			rt.Status + "\n" +
-			rt.Uptime + "\n" +
-			rt.ErrorMsg
-	default:
-		return
-	}
+	item := m.buildServiceItem(s, rt)
 
 	if serviceIdx < len(m.items) {
 		m.items[serviceIdx] = item
@@ -1300,30 +1253,15 @@ func (m *MainModel) refreshCard() {
 		case "docker":
 			rt := docker.GetMetricsFromContainer(s.Docker.ContainerName)
 			m.runtimeByID[s.Id] = rt
-			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Docker.ContainerName+"\n"+s.Url+"\n"+
-				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+rt.Mem+" / "+
-				rt.MemLimit+"\n"+
-				rt.Status+"\n"+
-				rt.Uptime+"\n"+
-				rt.ErrorMsg)
+			newItems = append(newItems, m.buildServiceItem(s, rt))
 		case "systemd":
 			rt := m.samplerStruct.GetSystemdMetrics(s.Id, s.Systemd.Unit)
 			m.runtimeByID[s.Id] = rt
-			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.Systemd.Unit+"\n"+"\n"+
-				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+
-				rt.Mem+" / "+rt.MemLimit+"\n"+
-				rt.Status+"\n"+
-				rt.Uptime+"\n"+
-				rt.ErrorMsg)
+			newItems = append(newItems, m.buildServiceItem(s, rt))
 		case "k8s":
 			rt := kubernetes.GetMetricsFromDeployment(s.K8s.Deployment, s.K8s.Namespace)
 			m.runtimeByID[s.Id] = rt
-			newItems = append(newItems, s.Id+"\n"+s.Name+"\n"+s.K8s.Deployment+"\n"+
-				strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+" %\n"+
-				rt.Mem+" / "+rt.MemLimit+"\n"+
-				rt.Status+"\n"+
-				rt.Uptime+"\n"+
-				rt.ErrorMsg)
+			newItems = append(newItems, m.buildServiceItem(s, rt))
 		}
 
 	}
@@ -1334,6 +1272,59 @@ func (m *MainModel) refreshCard() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+}
+
+func (m *MainModel) buildServiceItem(s config.ServiceDef, rt model.ServiceRuntime) string {
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
+	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+	statusStyle := lipgloss.NewStyle().Foreground(m.serviceStateColor(rt)).Bold(true)
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.palette.StateError)).Bold(true)
+
+	name := s.Name
+	if name == "" {
+		name = s.Id
+	}
+
+	target := m.deleteTargetLabel(s)
+	status := rt.Status
+	if status == "" {
+		status = "Unknown"
+	}
+	mem := strings.TrimSpace(rt.Mem)
+	if mem == "" {
+		mem = "0 B"
+	}
+	memLimit := strings.TrimSpace(rt.MemLimit)
+	if memLimit == "" {
+		memLimit = "No limit assigned"
+	}
+	uptime := strings.TrimSpace(rt.Uptime)
+	if uptime == "" {
+		uptime = "-"
+	}
+
+	errValue := "-"
+	if strings.TrimSpace(rt.ErrorMsg) != "" {
+		errValue = strings.TrimSpace(rt.ErrorMsg)
+	}
+
+	lines := []string{
+		lipgloss.NewStyle().Bold(true).Render(name),
+		labelStyle.Render("Target: ") + valueStyle.Render(target),
+		labelStyle.Render("Status: ") + statusStyle.Render(status),
+		"",
+		labelStyle.Render("CPU: ") + valueStyle.Render(strconv.FormatFloat(rt.Cpu, 'f', 2, 64)+"%"),
+		labelStyle.Render("Memory: ") + valueStyle.Render(mem+" / "+memLimit),
+		labelStyle.Render("Uptime: ") + valueStyle.Render(uptime),
+	}
+
+	if errValue == "-" {
+		lines = append(lines, labelStyle.Render("Error: ")+valueStyle.Render(errValue))
+	} else {
+		lines = append(lines, labelStyle.Render("Error: ")+errorStyle.Render(errValue))
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (m *MainModel) refreshLogsPreview() {
