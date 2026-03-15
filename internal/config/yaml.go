@@ -175,6 +175,58 @@ func (y *YamlConfig) AddService(service ServiceDef) error {
 	return nil
 }
 
+func (y *YamlConfig) DeleteService(id string) error {
+	filePath := "./internal/config/config.yaml"
+	yamlFile, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading yaml config file: %w", err)
+	}
+
+	var root yaml.Node
+	if err := yaml.Unmarshal(yamlFile, &root); err != nil {
+		return fmt.Errorf("unmarshal failed: %w", err)
+	}
+	if len(root.Content) == 0 {
+		return fmt.Errorf("empty yaml document")
+	}
+
+	doc := root.Content[0]
+	services := mapNodeValue(doc, "Services")
+	if services == nil || services.Kind != yaml.SequenceNode {
+		return fmt.Errorf("Services is not a list")
+	}
+
+	idx := -1
+	for i, node := range services.Content {
+		idNode := mapNodeValue(node, "Id")
+		if idNode != nil && idNode.Value == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("service id not found: %s", id)
+	}
+
+	services.Content = append(services.Content[:idx], services.Content[idx+1:]...)
+
+	updatedData, err := yaml.Marshal(&root)
+	if err != nil {
+		return fmt.Errorf("error marshaling YAML: %w", err)
+	}
+	if err := os.WriteFile(filePath, updatedData, 0644); err != nil {
+		return fmt.Errorf("error writing yaml: %w", err)
+	}
+
+	for i, s := range y.Services {
+		if s.Id == id {
+			y.Services = append(y.Services[:i], y.Services[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
 func mapNodeValue(m *yaml.Node, key string) *yaml.Node {
 	if m == nil || m.Kind != yaml.MappingNode {
 		return nil

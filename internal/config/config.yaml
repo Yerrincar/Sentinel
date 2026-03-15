@@ -1,37 +1,31 @@
 Version: 1
 Settings:
-  Polling:
-    Interval: 1s
-  Workspace:
-    Name: Home Lab Sentinel Demo
+    Polling:
+        Interval: 1s
+    Workspace:
+        Name: Home Lab Sentinel Demo
 Services:
-  - Id: sentinel-docker-demo-id
-    Name: Docker-Demo
-    Docker:
-      Container: sentinel-docker-demo
-    Type: docker
-    Url: ""
-  - Id: sentinel-docker-demo2-id
-    Name: Demo2
-    Docker:
-      Container: sentinel-docker-demo2
-    Type: docker
-    Url: ""
-  - Id: sentinel-systemd-demo-id
-    Name: Systemd-Demo
-    Systemd:
-      Unit: sentinel-systemd-demo.service
-    Type: systemd
-  - Id: sentinel-k8s-demo-id
-    Name: K8s-Demo
-    K8s:
-      Context: k3d-sentinel
-      Namespace: sentinel-demo
-      Deployment: sentinel-k8s-demo
-    Type: k8s
-  - Id: sentinel-docker-demo-id-3
-    Name: sentinel-docker-demo
-    Docker:
-      Container: sentinel-docker-demo-3
-    Type: docker
-    Url: ""
+    - Id: sentinel-docker-demo-id
+      Name: Docker-Demo
+      Docker:
+        Container: sentinel-docker-demo
+      Type: docker
+      Url: ""
+    - Id: sentinel-docker-demo2-id
+      Name: Demo2
+      Docker:
+        Container: sentinel-docker-demo2
+      Type: docker
+      Url: ""
+    - Id: sentinel-systemd-demo-id
+      Name: Systemd-Demo
+      Systemd:
+        Unit: sentinel-systemd-demo.service
+      Type: systemd
+    - Id: sentinel-k8s-demo-id
+      Name: K8s-Demo
+      K8s:
+        Context: k3d-sentinel
+        Namespace: sentinel-demo
+        Deployment: sentinel-k8s-demo
+      Type: k8s

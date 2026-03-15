@@ -48,46 +48,50 @@ const (
 )
 
 type MainModel struct {
-	items              []string
-	services           []config.ServiceDef
-	typeOptions        []string
-	filterOptions      []string
-	typeCursor         int
-	filterCursor       int
-	selectedType       string
-	selectedState      string
-	runtimeByID        map[string]model.ServiceRuntime
-	height             int
-	width              int
-	servicesPerRow     int
-	serviceHeight      int
-	serviceWidth       int
-	innerWidth         int
-	innerHeight        int
-	cursor             int
-	activeArea         focusArea
-	contentFocus       bool
-	viewport           viewport.Model
-	workspace          textinput.Model
-	workspaceActivated bool
-	kubeconfig         textinput.Model
-	kubeconfigActive   bool
-	addServiceMode     bool
-	addTypeOptions     []string
-	addTypeCursor      int
-	addFieldCursor     int
-	addInputs          []textinput.Model
-	addError           string
-	themesViewport     viewport.Model
-	themes             []theme.Palette
-	themeCursor        int
-	selectedTheme      string
-	palette            theme.Palette
-	configHandler      *config.YamlConfig
-	configServiceDef   *config.ServiceDef
-	samplerStruct      *systemd.Sampler
-	lastTick           time.Time
-	interval           time.Duration
+	items               []string
+	services            []config.ServiceDef
+	typeOptions         []string
+	filterOptions       []string
+	typeCursor          int
+	filterCursor        int
+	selectedType        string
+	selectedState       string
+	runtimeByID         map[string]model.ServiceRuntime
+	height              int
+	width               int
+	servicesPerRow      int
+	serviceHeight       int
+	serviceWidth        int
+	innerWidth          int
+	innerHeight         int
+	cursor              int
+	activeArea          focusArea
+	contentFocus        bool
+	viewport            viewport.Model
+	workspace           textinput.Model
+	workspaceActivated  bool
+	kubeconfig          textinput.Model
+	kubeconfigActive    bool
+	addServiceMode      bool
+	deleteServiceMode   bool
+	deleteServiceIdx    int
+	deleteConfirmCursor int
+	deleteError         string
+	addTypeOptions      []string
+	addTypeCursor       int
+	addFieldCursor      int
+	addInputs           []textinput.Model
+	addError            string
+	themesViewport      viewport.Model
+	themes              []theme.Palette
+	themeCursor         int
+	selectedTheme       string
+	palette             theme.Palette
+	configHandler       *config.YamlConfig
+	configServiceDef    *config.ServiceDef
+	samplerStruct       *systemd.Sampler
+	lastTick            time.Time
+	interval            time.Duration
 }
 
 func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler, services []config.ServiceDef) *MainModel {
@@ -96,14 +100,16 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 	t.SetValue(y.Settings.Workspace.Name)
 	t.Blur()
 	t.Width = 40
+
 	k := textinput.New()
-	k.Placeholder = ""
+	k.Placeholder = "Set/Update your KUBECONFIG path"
 	k.Prompt = "> "
 	k.SetValue(os.Getenv("KUBECONFIG"))
 	k.EchoMode = textinput.EchoPassword
 	k.EchoCharacter = '*'
 	k.Blur()
 	k.Width = 40
+
 	p := theme.Default()
 	if loaded, err := theme.LoadSelected(); err == nil {
 		p = loaded
@@ -111,26 +117,29 @@ func InitialModel(y *config.YamlConfig, d *config.ServiceDef, s *systemd.Sampler
 	allThemes := theme.All()
 
 	return &MainModel{
-		items:              make([]string, 0),
-		typeOptions:        []string{"All", "Docker", "Systemd", "K8s"},
-		filterOptions:      []string{"All", "Running", "Degraded", "Stopped", "Inactive"},
-		addTypeOptions:     []string{"Docker", "Systemd", "K8s"},
-		activeArea:         workSpaceFocus,
-		configHandler:      y,
-		configServiceDef:   d,
-		samplerStruct:      s,
-		services:           services,
-		runtimeByID:        map[string]model.ServiceRuntime{},
-		interval:           y.Interval(),
-		workspace:          t,
-		workspaceActivated: false,
-		kubeconfig:         k,
-		kubeconfigActive:   false,
-		themes:             allThemes,
-		selectedTheme:      p.Name,
-		palette:            p,
-		selectedType:       "",
-		selectedState:      "",
+		items:               make([]string, 0),
+		typeOptions:         []string{"All", "Docker", "Systemd", "K8s"},
+		filterOptions:       []string{"All", "Running", "Degraded", "Stopped", "Inactive"},
+		addTypeOptions:      []string{"Docker", "Systemd", "K8s"},
+		activeArea:          workSpaceFocus,
+		configHandler:       y,
+		configServiceDef:    d,
+		samplerStruct:       s,
+		services:            services,
+		runtimeByID:         map[string]model.ServiceRuntime{},
+		interval:            y.Interval(),
+		workspace:           t,
+		workspaceActivated:  false,
+		kubeconfig:          k,
+		kubeconfigActive:    false,
+		deleteServiceMode:   false,
+		deleteServiceIdx:    -1,
+		deleteConfirmCursor: 1,
+		themes:              allThemes,
+		selectedTheme:       p.Name,
+		palette:             p,
+		selectedType:        "",
+		selectedState:       "",
 	}
 }
 
@@ -188,6 +197,9 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.addServiceMode {
 		return m.handleAddServiceUpdate(msg)
+	}
+	if m.deleteServiceMode {
+		return m.handleDeleteServiceUpdate(msg)
 	}
 
 	//text input mode
@@ -250,6 +262,14 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "a":
 			m.startAddService()
+			return m, nil
+		case "d":
+			if m.activeArea == servicesFocus && m.contentFocus {
+				serviceIdx := m.filteredServiceIndex(m.cursor, m.selectedType, m.selectedState)
+				if serviceIdx >= 0 && serviceIdx < len(m.services) {
+					m.startDeleteService(serviceIdx)
+				}
+			}
 			return m, nil
 		case "c":
 			m.selectedType = ""
@@ -503,9 +523,8 @@ func (m *MainModel) View() string {
 	workSpaceStyle := workSpaceStyle.Height(m.height/12).Width(int(float64(m.width)*0.33)).MarginLeft(1).Align(lipgloss.Left, lipgloss.Center)
 	typesSpaceStyle := typesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
 	filtersSpaceStyle := filtersSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 6).MarginLeft(1)
-	remoteConectionStyle := remoteConectionStyle.Width(int(float64(m.width) * 0.33)).Height(m.height / 12).MarginLeft(1)
 	kubeconfigStyle := kubeconfigStyle.Height(m.height/12).Width(int(float64(m.width)*0.33)).MarginLeft(1).Align(lipgloss.Left, lipgloss.Center)
-	themesSpaceStyle := themesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height / 3).MarginLeft(1)
+	themesSpaceStyle := themesSpaceStyle.Width(int(float64(m.width)*0.33)/2 - 1).Height(m.height/2 - 6).MarginLeft(1)
 	servicesCardsStyle := cardStyles.Width(m.serviceWidth).Height(m.serviceHeight).MarginLeft(2).MarginTop(1)
 
 	workspaceContent := m.workspace.View()
@@ -529,7 +548,7 @@ func (m *MainModel) View() string {
 	workSpacePanel := helpers.BorderTitle(workSpaceStyle.Render(workspaceContent), "Workspace")
 	typesSpacePanel := helpers.BorderTitle(m.renderListPanel(typesSpaceStyle, m.typeOptions, m.typeCursor, m.contentFocus && m.activeArea == typesFocus, m.selectedType, m.typeValueByLabel), "Types")
 	filtersSpacePanel := helpers.BorderTitle(m.renderListPanel(filtersSpaceStyle, m.filterOptions, m.filterCursor, m.contentFocus && m.activeArea == filtersFocus, m.selectedState, m.filterValueByLabel), "Filters")
-	remoteSpacePanel := helpers.BorderTitle(remoteConectionStyle.String(), "Remote Conection")
+	// remoteSpacePanel disabled for MVP; keep widget code for future remote feature.
 	kubeconfigPanel := helpers.BorderTitle(kubeconfigStyle.Render(kubeconfigContent), "Kubeconfig")
 	themesSpacePanel := helpers.BorderTitle(m.renderThemesPanel(themesSpaceStyle), "Themes")
 
@@ -537,7 +556,6 @@ func (m *MainModel) View() string {
 	workSpacePanel = helpers.ColorPanelBorder(workSpacePanel, border)
 	typesSpacePanel = helpers.ColorPanelBorder(typesSpacePanel, border)
 	filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, border)
-	remoteSpacePanel = helpers.ColorPanelBorder(remoteSpacePanel, border)
 	kubeconfigPanel = helpers.ColorPanelBorder(kubeconfigPanel, border)
 	themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, border)
 
@@ -545,7 +563,6 @@ func (m *MainModel) View() string {
 	workSpacePanel = m.colorPanelTitle(workSpacePanel, "Workspace", lipgloss.Color(m.palette.TitleWorkspace))
 	typesSpacePanel = m.colorPanelTitle(typesSpacePanel, "Types", lipgloss.Color(m.palette.TitleTypes))
 	filtersSpacePanel = m.colorPanelTitle(filtersSpacePanel, "Filters", lipgloss.Color(m.palette.TitleFilters))
-	remoteSpacePanel = m.colorPanelTitle(remoteSpacePanel, "Remote Conection", lipgloss.Color(m.palette.TitleRemote))
 	kubeconfigPanel = m.colorPanelTitle(kubeconfigPanel, "Kubeconfig", lipgloss.Color(m.palette.TitleKubeconfig))
 	themesSpacePanel = m.colorPanelTitle(themesSpacePanel, "Themes", lipgloss.Color(m.palette.TitleThemes))
 
@@ -560,8 +577,6 @@ func (m *MainModel) View() string {
 		filtersSpacePanel = helpers.ColorPanelBorder(filtersSpacePanel, focus)
 	case themesFocus:
 		themesSpacePanel = helpers.ColorPanelBorder(themesSpacePanel, focus)
-	case remoteConectionFocus:
-		remoteSpacePanel = helpers.ColorPanelBorder(remoteSpacePanel, focus)
 	case kubeconfigFocus:
 		kubeconfigPanel = helpers.ColorPanelBorder(kubeconfigPanel, focus)
 	}
@@ -569,20 +584,22 @@ func (m *MainModel) View() string {
 	sidePanels := lipgloss.JoinVertical(lipgloss.Left, workSpacePanel, lipgloss.JoinHorizontal(lipgloss.Left,
 		typesSpacePanel,
 		filtersSpacePanel),
-		remoteSpacePanel,
 		kubeconfigPanel,
 		themesSpacePanel)
 
 	footer := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(m.palette.Selected)).
 		PaddingLeft(1).
-		Render("Move: ↑↓→← / hjkl | Select: enter | Clear filters: c | Add service: a | Quit: ctrl+c/q")
+		Render("Move: ↑↓→← / hjkl | Select: enter | Clear filters: c | Add service: a | Delete: d | Quit: ctrl+c/q")
 
 	base := standardStyle.Render(lipgloss.JoinHorizontal(lipgloss.Bottom,
 		lipgloss.JoinHorizontal(lipgloss.Top, sidePanels,
 			servicesPanel)), footer)
 	if m.addServiceMode {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderAddServiceModal())
+	}
+	if m.deleteServiceMode {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderDeleteServiceModal())
 	}
 	return base
 }
@@ -599,6 +616,62 @@ func (m *MainModel) startAddService() {
 	m.addTypeCursor = 0
 	m.addFieldCursor = 1
 	m.resetAddInputs()
+}
+
+func (m *MainModel) startDeleteService(serviceIdx int) {
+	m.deleteServiceMode = true
+	m.deleteServiceIdx = serviceIdx
+	m.deleteConfirmCursor = 1
+	m.deleteError = ""
+}
+
+func (m *MainModel) handleDeleteServiceUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width - 2
+		m.height = msg.Height - 2
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "esc":
+			m.deleteServiceMode = false
+			m.deleteError = ""
+			return m, nil
+		case "left", "h":
+			m.deleteConfirmCursor = 0
+			return m, nil
+		case "right", "l":
+			m.deleteConfirmCursor = 1
+			return m, nil
+		case "enter":
+			if m.deleteConfirmCursor == 1 {
+				m.deleteServiceMode = false
+				m.deleteError = ""
+				return m, nil
+			}
+			if m.deleteServiceIdx < 0 || m.deleteServiceIdx >= len(m.services) {
+				m.deleteError = "invalid selected service"
+				return m, nil
+			}
+
+			svc := m.services[m.deleteServiceIdx]
+			if err := m.configHandler.DeleteService(svc.Id); err != nil {
+				m.deleteError = err.Error()
+				return m, nil
+			}
+
+			delete(m.runtimeByID, svc.Id)
+			m.services = append(m.services[:m.deleteServiceIdx], m.services[m.deleteServiceIdx+1:]...)
+			m.deleteServiceMode = false
+			m.deleteServiceIdx = -1
+			m.deleteError = ""
+			m.refreshCard()
+			return m, nil
+		}
+	}
+	return m, nil
 }
 
 func (m *MainModel) addFieldLabels() []string {
@@ -803,6 +876,63 @@ func (m *MainModel) renderAddServiceModal() string {
 		Padding(1, 2).
 		Width(w).
 		Render(strings.Join(lines, "\n"))
+}
+
+func (m *MainModel) renderDeleteServiceModal() string {
+	focus := m.focusThemeColor()
+	border := lipgloss.Color(m.palette.Border)
+	serviceLabel := "selected"
+	if m.deleteServiceIdx >= 0 && m.deleteServiceIdx < len(m.services) {
+		serviceLabel = m.deleteTargetLabel(m.services[m.deleteServiceIdx])
+	}
+
+	yes := "Yes"
+	no := "No"
+	if m.deleteConfirmCursor == 0 {
+		yes = lipgloss.NewStyle().Foreground(focus).Bold(true).Render("> Yes")
+		no = "  No"
+	} else {
+		yes = "  Yes"
+		no = lipgloss.NewStyle().Foreground(focus).Bold(true).Render("> No")
+	}
+
+	lines := []string{
+		lipgloss.NewStyle().Bold(true).Foreground(focus).Render("Delete Service"),
+		fmt.Sprintf("Are you sure you want to delete %s service?", serviceLabel),
+		"",
+		lipgloss.JoinHorizontal(lipgloss.Left, yes, "    ", no),
+	}
+	if m.deleteError != "" {
+		lines = append(lines, "", lipgloss.NewStyle().Foreground(lipgloss.Color(m.palette.StateError)).Render("Error: "+m.deleteError))
+	}
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Padding(1, 2).
+		Width(64).
+		Render(strings.Join(lines, "\n"))
+}
+
+func (m *MainModel) deleteTargetLabel(s config.ServiceDef) string {
+	switch s.TypeOfService {
+	case "docker":
+		if s.Docker.ContainerName != "" {
+			return s.Docker.ContainerName
+		}
+	case "systemd":
+		if s.Systemd.Unit != "" {
+			return s.Systemd.Unit
+		}
+	case "k8s":
+		if s.K8s.Deployment != "" {
+			return s.K8s.Deployment
+		}
+	}
+	if s.Name != "" {
+		return s.Name
+	}
+	return s.Id
 }
 
 func (m *MainModel) typeValueByOption() string {
@@ -1218,7 +1348,7 @@ func (m *MainModel) moveFocus(dir string) {
 		case "right", "l":
 			m.activeArea = filtersFocus
 		case "down", "j":
-			m.activeArea = remoteConectionFocus
+			m.activeArea = kubeconfigFocus
 		}
 	case filtersFocus:
 		switch dir {
@@ -1229,12 +1359,12 @@ func (m *MainModel) moveFocus(dir string) {
 		case "right", "l":
 			m.activeArea = servicesFocus
 		case "down", "j":
-			m.activeArea = remoteConectionFocus
+			m.activeArea = kubeconfigFocus
 		}
 	case remoteConectionFocus:
 		switch dir {
 		case "up", "k":
-			m.activeArea = typesFocus
+			m.activeArea = filtersFocus
 		case "right", "l":
 			m.activeArea = servicesFocus
 		case "down", "j":
@@ -1243,7 +1373,7 @@ func (m *MainModel) moveFocus(dir string) {
 	case kubeconfigFocus:
 		switch dir {
 		case "up", "k":
-			m.activeArea = remoteConectionFocus
+			m.activeArea = filtersFocus
 		case "right", "l":
 			m.activeArea = servicesFocus
 		case "down", "j":
