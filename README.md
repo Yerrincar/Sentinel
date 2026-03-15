@@ -1,6 +1,6 @@
 # Sentinel, the one that keeps guard.
 
-TUI service dashboard to manage and monitor services operations and live status.
+TUI dashboard for accessing, monitoring and playing around with your services. 
 
 ## Demo
 
